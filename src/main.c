@@ -8,6 +8,12 @@
 #define SCREEN_W 1200
 #define SCREEN_H 800
 
+enum Distance_Formula
+{
+	EUCLIDEAN,
+	MANHATTAN
+};
+
 typedef struct Point_Struct
 {
 	int x;
@@ -17,7 +23,7 @@ typedef struct Point_Struct
 	int b;
 } Point;
 
-void voronoi(SDL_Renderer *, int);
+void voronoi(SDL_Renderer *, int, enum Distance_Formula);
 
 int main(int argc, char *argv[])
 {
@@ -50,6 +56,8 @@ int main(int argc, char *argv[])
 	int frame = 0;
 	char frame_s[10];
 
+	enum Distance_Formula dist_type = EUCLIDEAN;
+
 	// Setup
 	printf("\n");
 	srand((unsigned) time(NULL));
@@ -73,6 +81,17 @@ int main(int argc, char *argv[])
 							case SDLK_SPACE:
 								doiter = 1;
 								break;
+
+							case SDLK_k:
+								if (dist_type == MANHATTAN)
+								{
+									dist_type = EUCLIDEAN;
+								}
+								else
+								{
+									dist_type = MANHATTAN;
+								}
+								break;
 						}
 						break;
 					case SDL_QUIT:
@@ -94,7 +113,7 @@ int main(int argc, char *argv[])
 
 		// Render
 		SDL_RenderClear(ren);
-		voronoi(ren, 20);
+		voronoi(ren, 20, dist_type);
 
 		SDL_RenderCopy(ren, message_txtr, NULL, &message_rect);
 		SDL_RenderPresent(ren);
@@ -113,7 +132,7 @@ int main(int argc, char *argv[])
 	return 0;
 }
 
-void voronoi(SDL_Renderer *ren, int pointc)
+void voronoi(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type)
 {
 	// Assign 20 random points
 	Point *points = malloc(sizeof(Point) * pointc);
@@ -136,7 +155,20 @@ void voronoi(SDL_Renderer *ren, int pointc)
 			for (int k = 0; k < pointc; ++k)
 			{
 				// Get distance from each point
-				distances[k] = sqrt(abs(points[k].x - i) + abs(points[k].y - j));
+				switch(dist_type)
+				{
+					case (EUCLIDEAN):
+						distances[k] = sqrt((abs(points[k].x - i) * abs(points[k].x - i)) + (abs(points[k].y - j) * abs(points[k].y - j)));
+						break;
+					case (MANHATTAN):
+						distances[k] = abs(points[k].x - i) + abs(points[k].y - j);
+						break;
+					default:
+						//distances[k] = sqrt(pow(abs(points[k].x - i), 2) + pow(abs(points[k].y - j), 2));
+						distances[k] = sqrt((abs(points[k].x - i) * abs(points[k].x - i)) + (abs(points[k].y - j) * abs(points[k].y - j)));
+						break;
+
+				}
 			}
 
 			// Assign color based on closest
