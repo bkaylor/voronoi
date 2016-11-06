@@ -57,6 +57,7 @@ int main(int argc, char *argv[])
 	char frame_s[10];
 
 	enum Distance_Formula dist_type = EUCLIDEAN;
+	int pointc = 20;
 
 	// Setup
 	printf("\n");
@@ -92,6 +93,17 @@ int main(int argc, char *argv[])
 									dist_type = MANHATTAN;
 								}
 								break;
+
+							case SDLK_i:
+								pointc = pointc + 10;
+								break;
+
+							case SDLK_o:
+								if (pointc > 10)
+								{
+									pointc = pointc - 10;
+								}
+								break;
 						}
 						break;
 					case SDL_QUIT:
@@ -113,7 +125,7 @@ int main(int argc, char *argv[])
 
 		// Render
 		SDL_RenderClear(ren);
-		voronoi(ren, 20, dist_type);
+		voronoi(ren, pointc, dist_type);
 
 		SDL_RenderCopy(ren, message_txtr, NULL, &message_rect);
 		SDL_RenderPresent(ren);
