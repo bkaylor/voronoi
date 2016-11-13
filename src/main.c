@@ -116,16 +116,19 @@ int main(int argc, char *argv[])
 		}
 
 		doiter = 0;
-		start_time = SDL_GetTicks();
-
-		// Simulate
-		sprintf(frame_s, "%u ms", frame_time);
-		SDL_Surface *message_surf = TTF_RenderText_Solid(font, frame_s, font_color);
-		SDL_Texture *message_txtr = SDL_CreateTextureFromSurface(ren, message_surf);
 
 		// Render
 		SDL_RenderClear(ren);
+
+		start_time = SDL_GetTicks();
 		voronoi(ren, pointc, dist_type);
+		end_time = SDL_GetTicks();
+
+		frame_time = end_time - start_time;
+		sprintf(frame_s, "%u ms", frame_time);
+
+		SDL_Surface *message_surf = TTF_RenderText_Solid(font, frame_s, font_color);
+		SDL_Texture *message_txtr = SDL_CreateTextureFromSurface(ren, message_surf);
 
 		SDL_RenderCopy(ren, message_txtr, NULL, &message_rect);
 		SDL_RenderPresent(ren);
@@ -134,8 +137,6 @@ int main(int argc, char *argv[])
 		// Cleanup
 		SDL_FreeSurface(message_surf);
 		SDL_DestroyTexture(message_txtr);
-		end_time = SDL_GetTicks();
-		frame_time = end_time - start_time;
 	}
 
 	SDL_DestroyRenderer(ren);
@@ -146,7 +147,7 @@ int main(int argc, char *argv[])
 
 void voronoi(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type)
 {
-	// Assign 20 random points
+	// Assign random points
 	Point *points = malloc(sizeof(Point) * pointc);
 
 	for (int i = 0; i < pointc; ++i)
