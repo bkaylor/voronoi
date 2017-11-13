@@ -1,7 +1,7 @@
-## Voronoi
+# Voronoi
 A simple voronoi diagram generator in c.
 
-# Usage
+## Usage
 Run bin/voronoi.exe.
 
 `SPACE` to generate a diagram.
