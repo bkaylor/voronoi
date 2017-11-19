@@ -13,5 +13,5 @@ Run bin/voronoi.exe.
 `o` to decrease the point count by 10.
 
 # Screenshots
-![Euclidean distance formula example](/misc/euclidean_example.png?raw=true "Euclidean")
-![Manhattan distance formula example](/misc/manhattan_example.pngraw=true "Manhattan")
+![Euclidean distance formula example](/../master/misc/euclidean_example.png?raw=true "Euclidean")
+![Manhattan distance formula example](/../master/misc/manhattan_example.png?raw=true "Manhattan")
