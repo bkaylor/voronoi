@@ -49,12 +49,16 @@ int main(int argc, char *argv[])
 	}
 
 	SDL_Color font_color = {255, 255, 255};
-	SDL_Rect message_rect = {0, 0, 80, 30};
+	// SDL_Rect frame_rect = {5 , 5,      80, 30};
+	SDL_Rect type_rect  = {5 , 5 + 30, 80, 30};
+	SDL_Rect point_rect = {5 , 5 + 60, 80, 30};
 
 	SDL_Event event;
 	int quit = 0, doiter = 0;
 	int frame = 0;
 	char frame_s[10];
+	char type_s[10];
+	char point_s[10];
 
 	enum Distance_Formula dist_type = EUCLIDEAN;
 	int pointc = 20;
@@ -87,10 +91,12 @@ int main(int argc, char *argv[])
 								if (dist_type == MANHATTAN)
 								{
 									dist_type = EUCLIDEAN;
+                                    sprintf(type_s, "Euclidean");
 								}
 								else
 								{
 									dist_type = MANHATTAN;
+                                    sprintf(type_s, "Manhattan");
 								}
 								break;
 
@@ -115,34 +121,59 @@ int main(int argc, char *argv[])
 			}
 		}
 
-		doiter = 0;
+        if (!quit) {
+            doiter = 0;
 
-		// Render
-		SDL_RenderClear(ren);
+            // Render
+            SDL_RenderClear(ren);
 
-		start_time = SDL_GetTicks();
-		voronoi(ren, pointc, dist_type);
-		end_time = SDL_GetTicks();
+            start_time = SDL_GetTicks();
+            voronoi(ren, pointc, dist_type);
+            end_time = SDL_GetTicks();
 
-		frame_time = end_time - start_time;
-		sprintf(frame_s, "%u ms", frame_time);
+            frame_time = end_time - start_time;
+            sprintf(frame_s, "%u ms", frame_time);
 
-		SDL_Surface *message_surf = TTF_RenderText_Solid(font, frame_s, font_color);
-		SDL_Texture *message_txtr = SDL_CreateTextureFromSurface(ren, message_surf);
+            sprintf(point_s, "%d points", pointc);
 
-		SDL_RenderCopy(ren, message_txtr, NULL, &message_rect);
-		SDL_RenderPresent(ren);
-		++frame;
+            SDL_Surface *frame_surface = TTF_RenderText_Solid(font, frame_s, font_color);
+            SDL_Texture *frame_texture = SDL_CreateTextureFromSurface(ren, frame_surface);
+            int frame_x, frame_y;
+            SDL_QueryTexture(frame_texture, NULL, NULL, &frame_x, &frame_y);
+            SDL_Rect frame_rect = {5 , 5, frame_x, frame_y};
+            SDL_RenderCopy(ren, frame_texture, NULL, &frame_rect);
 
-		// Cleanup
-		SDL_FreeSurface(message_surf);
-		SDL_DestroyTexture(message_txtr);
+            SDL_Surface *type_surface = TTF_RenderText_Solid(font, type_s, font_color);
+            SDL_Texture *type_texture = SDL_CreateTextureFromSurface(ren, type_surface);
+            SDL_RenderCopy(ren, type_texture, NULL, &type_rect);
+
+            SDL_Surface *point_surface = TTF_RenderText_Solid(font, point_s, font_color);
+            SDL_Texture *point_texture = SDL_CreateTextureFromSurface(ren, point_surface);
+            SDL_RenderCopy(ren, point_texture, NULL, &point_rect);
+
+            SDL_RenderPresent(ren);
+            ++frame;
+
+            // Cleanup
+            SDL_FreeSurface(frame_surface);
+            SDL_DestroyTexture(frame_texture);
+
+            SDL_FreeSurface(type_surface);
+            SDL_DestroyTexture(type_texture);
+
+            SDL_FreeSurface(point_surface);
+            SDL_DestroyTexture(point_texture);
+        }
 	}
 
 	SDL_DestroyRenderer(ren);
 	SDL_DestroyWindow(win);
 	SDL_Quit();
 	return 0;
+}
+
+void triangulate()
+{
 }
 
 void voronoi(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type)
