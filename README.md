@@ -12,6 +12,10 @@ Run bin/voronoi.exe.
 
 `o` to decrease the point count by 10.
 
+`h` to hide the text.
+
+`f` for fast mode.
+
 ## Screenshots
 ![Euclidean distance formula example](misc/example_euclidean.png?raw=true "Euclidean")
 ![Manhattan distance formula example](misc/example_manhattan.png?raw=true "Manhattan")
