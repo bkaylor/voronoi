@@ -8,6 +8,19 @@
 #define SCREEN_W 1200
 #define SCREEN_H 800
 
+/*
+ * TODO(bkaylor): ESC to quit
+ * TODO(bkaylor): Delaunay implementation- euclidean
+ * TODO(bkaylor): Write diagram to file
+ * TODO(bkaylor): Variable window size
+ * TODO(bkaylor): BLITZ-MODE
+ * TODO(bkaylor): Single texture?
+ * TODO(bkaylor): Key to hide text
+ * TODO(bkaylor): "WORKING ..." message
+ * TODO(bkaylor): More distance functions?
+ * TODO(bkaylor): ERROR: Stops working for high point counts. Find max/fix?
+*/
+
 enum Distance_Formula
 {
 	EUCLIDEAN,
@@ -49,9 +62,6 @@ int main(int argc, char *argv[])
 	}
 
 	SDL_Color font_color = {255, 255, 255};
-	// SDL_Rect frame_rect = {5 , 5,      80, 30};
-	SDL_Rect type_rect  = {5 , 5 + 30, 80, 30};
-	SDL_Rect point_rect = {5 , 5 + 60, 80, 30};
 
 	SDL_Event event;
 	int quit = 0, doiter = 0;
@@ -68,6 +78,7 @@ int main(int argc, char *argv[])
 	srand((unsigned) time(NULL));
 	unsigned int start_time, end_time, frame_time;
 	frame_time = 0;
+    sprintf(type_s, "Euclidean");
 
 	// Main Loop
 	while (!quit)
@@ -145,10 +156,16 @@ int main(int argc, char *argv[])
 
             SDL_Surface *type_surface = TTF_RenderText_Solid(font, type_s, font_color);
             SDL_Texture *type_texture = SDL_CreateTextureFromSurface(ren, type_surface);
+            int type_x, type_y;
+            SDL_QueryTexture(type_texture, NULL, NULL, &type_x, &type_y);
+            SDL_Rect type_rect = {5 , 5 + 10, type_x, type_y};
             SDL_RenderCopy(ren, type_texture, NULL, &type_rect);
 
             SDL_Surface *point_surface = TTF_RenderText_Solid(font, point_s, font_color);
             SDL_Texture *point_texture = SDL_CreateTextureFromSurface(ren, point_surface);
+            int point_x, point_y;
+            SDL_QueryTexture(point_texture, NULL, NULL, &point_x, &point_y);
+            SDL_Rect point_rect = {5 , 5 + 20, point_x, point_y};
             SDL_RenderCopy(ren, point_texture, NULL, &point_rect);
 
             SDL_RenderPresent(ren);
@@ -172,8 +189,20 @@ int main(int argc, char *argv[])
 	return 0;
 }
 
-void triangulate()
+void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type)
 {
+	// Assign random points
+	Point *points = malloc(sizeof(Point) * pointc);
+
+	for (int i = 0; i < pointc; ++i)
+	{
+		points[i].x = rand() % SCREEN_W;
+		points[i].y = rand() % SCREEN_H;
+
+		points[i].r = rand() % 255;
+		points[i].g = rand() % 255;
+		points[i].b = rand() % 255;
+	}
 }
 
 void voronoi(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type)
@@ -196,20 +225,20 @@ void voronoi(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type)
 		for (int j = 0; j < SCREEN_H; ++j)
 		{
 			float distances[pointc];
+            float x_distance, y_distance;
 			for (int k = 0; k < pointc; ++k)
 			{
 				// Get distance from each point
 				switch(dist_type)
 				{
-					case (EUCLIDEAN):
-						distances[k] = sqrt((abs(points[k].x - i) * abs(points[k].x - i)) + (abs(points[k].y - j) * abs(points[k].y - j)));
-						break;
 					case (MANHATTAN):
 						distances[k] = abs(points[k].x - i) + abs(points[k].y - j);
 						break;
+					case (EUCLIDEAN):
 					default:
-						//distances[k] = sqrt(pow(abs(points[k].x - i), 2) + pow(abs(points[k].y - j), 2));
-						distances[k] = sqrt((abs(points[k].x - i) * abs(points[k].x - i)) + (abs(points[k].y - j) * abs(points[k].y - j)));
+                        x_distance = abs(points[k].x - i);
+                        y_distance = abs(points[k].y - j);
+						distances[k] = (x_distance * x_distance) + (y_distance * y_distance);
 						break;
 
 				}
