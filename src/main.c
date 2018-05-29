@@ -9,13 +9,10 @@
 #define SCREEN_H 800
 
 /*
- * TODO(bkaylor): ESC to quit
  * TODO(bkaylor): Delaunay implementation- euclidean
  * TODO(bkaylor): Write diagram to file
  * TODO(bkaylor): Variable window size
- * TODO(bkaylor): BLITZ-MODE
  * TODO(bkaylor): Single texture?
- * TODO(bkaylor): Key to hide text
  * TODO(bkaylor): "WORKING ..." message
  * TODO(bkaylor): More distance functions?
  * TODO(bkaylor): ERROR: Stops working for high point counts. Find max/fix?
@@ -37,6 +34,7 @@ typedef struct Point_Struct
 } Point;
 
 void voronoi(SDL_Renderer *, int, enum Distance_Formula);
+void fast(SDL_Renderer *, int, enum Distance_Formula);
 
 int main(int argc, char *argv[])
 {
@@ -69,6 +67,8 @@ int main(int argc, char *argv[])
 	char frame_s[10];
 	char type_s[10];
 	char point_s[10];
+    int show_text = 1;
+    int fast_mode = 0;
 
 	enum Distance_Formula dist_type = EUCLIDEAN;
 	int pointc = 20;
@@ -121,6 +121,26 @@ int main(int argc, char *argv[])
 									pointc = pointc - 10;
 								}
 								break;
+
+							case SDLK_h:
+                                if (show_text == 1) {
+                                    show_text = 0;
+                                } else if (show_text == 0) {
+                                    show_text = 1;
+                                }
+								break;
+
+                            case SDLK_f:
+                                if (fast_mode == 1) {
+                                    fast_mode = 0;
+                                } else if (fast_mode == 0) {
+                                    fast_mode = 1;
+                                }
+                                break;
+
+							case SDLK_ESCAPE:
+                                quit = 1;
+								break;
 						}
 						break;
 					case SDL_QUIT:
@@ -139,7 +159,11 @@ int main(int argc, char *argv[])
             SDL_RenderClear(ren);
 
             start_time = SDL_GetTicks();
-            voronoi(ren, pointc, dist_type);
+            if (fast_mode) {
+                fast(ren, pointc, dist_type);
+            } else {
+                voronoi(ren, pointc, dist_type);
+            }
             end_time = SDL_GetTicks();
 
             frame_time = end_time - start_time;
@@ -152,21 +176,30 @@ int main(int argc, char *argv[])
             int frame_x, frame_y;
             SDL_QueryTexture(frame_texture, NULL, NULL, &frame_x, &frame_y);
             SDL_Rect frame_rect = {5 , 5, frame_x, frame_y};
-            SDL_RenderCopy(ren, frame_texture, NULL, &frame_rect);
+
+            if (show_text) {
+                SDL_RenderCopy(ren, frame_texture, NULL, &frame_rect);
+            }
 
             SDL_Surface *type_surface = TTF_RenderText_Solid(font, type_s, font_color);
             SDL_Texture *type_texture = SDL_CreateTextureFromSurface(ren, type_surface);
             int type_x, type_y;
             SDL_QueryTexture(type_texture, NULL, NULL, &type_x, &type_y);
             SDL_Rect type_rect = {5 , 5 + 10, type_x, type_y};
-            SDL_RenderCopy(ren, type_texture, NULL, &type_rect);
+
+            if (show_text) {
+                SDL_RenderCopy(ren, type_texture, NULL, &type_rect);
+            }
 
             SDL_Surface *point_surface = TTF_RenderText_Solid(font, point_s, font_color);
             SDL_Texture *point_texture = SDL_CreateTextureFromSurface(ren, point_surface);
             int point_x, point_y;
             SDL_QueryTexture(point_texture, NULL, NULL, &point_x, &point_y);
             SDL_Rect point_rect = {5 , 5 + 20, point_x, point_y};
-            SDL_RenderCopy(ren, point_texture, NULL, &point_rect);
+
+            if (show_text) {
+                SDL_RenderCopy(ren, point_texture, NULL, &point_rect);
+            }
 
             SDL_RenderPresent(ren);
             ++frame;
@@ -203,6 +236,15 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type)
 		points[i].g = rand() % 255;
 		points[i].b = rand() % 255;
 	}
+
+	for (int i = 0; i < SCREEN_W; ++i)
+	{
+		for (int j = 0; j < SCREEN_H; ++j)
+		{
+            SDL_SetRenderDrawColor(ren, rand() % 255, rand() % 255, rand() % 255, 255);
+            SDL_RenderDrawPoint(ren, i, j);
+        }
+    }
 }
 
 void voronoi(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type)
