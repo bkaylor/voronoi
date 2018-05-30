@@ -11,7 +11,6 @@
 /*
  * TODO(bkaylor): Delaunay implementation- euclidean
  * TODO(bkaylor): Write diagram to file
- * TODO(bkaylor): Variable window size
  * TODO(bkaylor): Single texture?
  * TODO(bkaylor): "WORKING ..." message
  * TODO(bkaylor): More distance functions?
@@ -33,8 +32,26 @@ typedef struct Point_Struct
 	int b;
 } Point;
 
-void voronoi(SDL_Renderer *, int, enum Distance_Formula);
-void fast(SDL_Renderer *, int, enum Distance_Formula);
+typedef struct Triangle_Struct
+{
+    Point points[3];
+} Triangle;
+
+typedef struct Circle_Struct
+{
+    Point center;
+    float radius;
+} Circle;
+
+typedef struct Edge_Struct
+{
+    Point points[2];
+} Edge;
+
+void voronoi(SDL_Renderer *, int, enum Distance_Formula, int, int);
+void fast(SDL_Renderer *, int, enum Distance_Formula, int, int);
+int are_equivalent_edges(Edge, Edge);
+int are_equivalent_points(Point, Point);
 
 int main(int argc, char *argv[])
 {
@@ -45,7 +62,7 @@ int main(int argc, char *argv[])
 			SDL_WINDOWPOS_CENTERED,
 			SDL_WINDOWPOS_CENTERED,
 			SCREEN_W, SCREEN_H,
-			SDL_WINDOW_SHOWN);
+			SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
 
 	// Setup renderer
 	SDL_Renderer *ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
@@ -158,11 +175,14 @@ int main(int argc, char *argv[])
             // Render
             SDL_RenderClear(ren);
 
+            int window_w, window_h;
+            SDL_GetWindowSize(win, &window_w, &window_h);
+
             start_time = SDL_GetTicks();
             if (fast_mode) {
-                fast(ren, pointc, dist_type);
+                fast(ren, pointc, dist_type, window_w, window_h);
             } else {
-                voronoi(ren, pointc, dist_type);
+                voronoi(ren, pointc, dist_type, window_w, window_h);
             }
             end_time = SDL_GetTicks();
 
@@ -222,49 +242,162 @@ int main(int argc, char *argv[])
 	return 0;
 }
 
-void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type)
+/*
+   TODO(bryan): Implement delaunay triangulation algorithm pseudocode
+
+   function BowyerWatson (pointList)
+      // pointList is a set of coordinates defining the points to be triangulated
+      triangulation := empty triangle mesh data structure
+      add super-triangle to triangulation // must be large enough to completely contain all the points in pointList
+      for each point in pointList do // add all the points one at a time to the triangulation
+         badTriangles := empty set
+         for each triangle in triangulation do // first find all the triangles that are no longer valid due to the insertion
+            if point is inside circumcircle of triangle
+               add triangle to badTriangles
+         polygon := empty set
+         for each triangle in badTriangles do // find the boundary of the polygonal hole
+            for each edge in triangle do
+               if edge is not shared by any other triangles in badTriangles
+                  add edge to polygon
+         for each triangle in badTriangles do // remove them from the data structure
+            remove triangle from triangulation
+         for each edge in polygon do // re-triangulate the polygonal hole
+            newTri := form a triangle from edge to point
+            add newTri to triangulation
+      for each triangle in triangulation // done inserting points, now clean up
+         if triangle contains a vertex from original super-triangle
+            remove triangle from triangulation
+      return triangulation
+*/
+
+void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int window_w, int window_h)
 {
 	// Assign random points
 	Point *points = malloc(sizeof(Point) * pointc);
 
 	for (int i = 0; i < pointc; ++i)
 	{
-		points[i].x = rand() % SCREEN_W;
-		points[i].y = rand() % SCREEN_H;
+		points[i].x = rand() % window_w;
+		points[i].y = rand() % window_h;
 
 		points[i].r = rand() % 255;
 		points[i].g = rand() % 255;
 		points[i].b = rand() % 255;
-	}
+    }
 
-	for (int i = 0; i < SCREEN_W; ++i)
-	{
-		for (int j = 0; j < SCREEN_H; ++j)
-		{
-            SDL_SetRenderDrawColor(ren, rand() % 255, rand() % 255, rand() % 255, 255);
-            SDL_RenderDrawPoint(ren, i, j);
+    // (2n - 1 - b) triangles
+    Triangle *triangulation = malloc(sizeof(Triangle) * 2 * pointc);
+
+    // Add supertriangle 
+    Point supertriangle_lower_left = {-2 * window_w, -2 * window_h};
+    Point supertriangle_upper_middle = {window_w/2, 2*window_h};
+    Point supertriangle_lower_right = {2 * window_w, -2*window_h};
+    triangulation[0].points[0] = supertriangle_lower_left;
+    triangulation[0].points[1] = supertriangle_upper_middle;
+    triangulation[0].points[2] = supertriangle_lower_right;
+
+    int triangle_count = 1;
+    int bad_triangle_count = 0;
+
+    for (int i = 0; i < pointc; i++)
+    {
+        Triangle *bad_triangles = malloc(sizeof(Triangle) * 2 * pointc);
+
+        for (int j = 0; j < triangle_count; ++j)
+        {
+            // Is point inside triangle's circle?
+
+            // Build circle
+            Point center = {(triangulation[j].points[0].x + triangulation[j].points[1].x + triangulation[j].points[2].x) / 3,
+                            (triangulation[j].points[0].y + triangulation[j].points[1].y + triangulation[j].points[2].y) / 3};
+
+            int x_distance = abs(center.x - triangulation[j].points[0].x);
+            int y_distance = abs(center.y - triangulation[j].points[0].y);
+            Circle circle = {center, sqrt(x_distance*x_distance + y_distance*y_distance)};
+
+            // Check if point inside    
+            x_distance = abs(circle.center.x - points[i].x);
+            y_distance = abs(circle.center.y - points[i].y);
+
+            if (sqrt(x_distance*x_distance + y_distance*y_distance) < circle.radius) {
+                bad_triangles[bad_triangle_count] = triangulation[j];
+                bad_triangle_count++;
+            }
+        }
+
+        Edge *polygon = malloc(sizeof(Edge) * bad_triangle_count * 3);
+        int polygon_edge_count = 0;
+
+        for (int j = 0; j < bad_triangle_count; j++)
+        {
+            Edge a, b, c;
+            a.points[0] = bad_triangles[j].points[0];
+            a.points[1] = bad_triangles[j].points[1];
+            b.points[0] = bad_triangles[j].points[1];
+            b.points[1] = bad_triangles[j].points[2];
+            c.points[0] = bad_triangles[j].points[2];
+            c.points[1] = bad_triangles[j].points[0];
+
+            for (int k = 0; k < bad_triangle_count; k++)
+            {
+                Edge d, e, f;
+                d.points[0] = bad_triangles[k].points[0];
+                d.points[1] = bad_triangles[k].points[1];
+                e.points[0] = bad_triangles[k].points[1];
+                e.points[1] = bad_triangles[k].points[2];
+                f.points[0] = bad_triangles[k].points[2];
+                f.points[1] = bad_triangles[k].points[0];
+
+                // TODO(bkaylor): Whoops, I goofed. Add to polygon if there are NO equivalent edges.
+                // also, don't check your own triangle.
+                if (are_equivalent_edges(a, d) || are_equivalent_edges(a, e) || are_equivalent_edges(a, f)) {
+                    polygon[polygon_edge_count] = a;
+                    polygon_edge_count++;
+                }
+
+                if (are_equivalent_edges(b, d) || are_equivalent_edges(b, e) || are_equivalent_edges(b, f)) {
+                    polygon[polygon_edge_count] = b;
+                    polygon_edge_count++;
+                }
+
+                if (are_equivalent_edges(c, d) || are_equivalent_edges(c, e) || are_equivalent_edges(c, f)) {
+                    polygon[polygon_edge_count] = c;
+                    polygon_edge_count++;
+                }
+            }
         }
     }
 }
 
-void voronoi(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type)
+int are_equivalent_edges(Edge a, Edge b)
+{
+    return (are_equivalent_points(a.points[0], b.points[0]) && are_equivalent_points(a.points[1], b.points[1])) ||
+           (are_equivalent_points(a.points[1], b.points[0]) && are_equivalent_points(a.points[0], b.points[1]));
+}
+
+int are_equivalent_points(Point a, Point b)
+{
+    return (a.x == b.x) && (a.y == b.y);
+}
+
+void voronoi(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int window_w, int window_h)
 {
 	// Assign random points
 	Point *points = malloc(sizeof(Point) * pointc);
 
 	for (int i = 0; i < pointc; ++i)
 	{
-		points[i].x = rand() % SCREEN_W;
-		points[i].y = rand() % SCREEN_H;
+		points[i].x = rand() % window_w;
+		points[i].y = rand() % window_h;
 
 		points[i].r = rand() % 255;
 		points[i].g = rand() % 255;
 		points[i].b = rand() % 255;
 	}
 	
-	for (int i = 0; i < SCREEN_W; ++i)
+	for (int i = 0; i < window_w; ++i)
 	{
-		for (int j = 0; j < SCREEN_H; ++j)
+		for (int j = 0; j < window_h; ++j)
 		{
 			float distances[pointc];
             float x_distance, y_distance;
