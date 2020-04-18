@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <time.h>
 #include <math.h>
+#include <stdbool.h>
 #include "SDL.h"
 #include "SDL_ttf.h"
 
@@ -35,6 +36,7 @@ typedef struct Point_Struct
 typedef struct Triangle_Struct
 {
     Point points[3];
+    bool evicted;
 } Triangle;
 
 typedef struct Circle_Struct
@@ -54,7 +56,10 @@ int are_equivalent_edges(Edge, Edge);
 int are_equivalent_points(Point, Point);
 
 int main(int argc, char *argv[])
-{
+{ 
+    // Turn off stdout buffering so printf works.
+    setvbuf (stdout, NULL, _IONBF, 0);
+
 	SDL_Init(SDL_INIT_EVERYTHING);
 
 	// Setup window
@@ -270,6 +275,7 @@ int main(int argc, char *argv[])
       return triangulation
 */
 
+// TODO(bkaylor): Occasional crash during a pass on fast mode, before it prints or draws anything.
 void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int window_w, int window_h)
 {
 	// Assign random points
@@ -295,16 +301,23 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int wi
     triangulation[0].points[0] = supertriangle_lower_left;
     triangulation[0].points[1] = supertriangle_upper_middle;
     triangulation[0].points[2] = supertriangle_lower_right;
+    triangulation[0].evicted = false;
 
     int triangle_count = 1;
-    int bad_triangle_count = 0;
+    // int bad_triangle_count = 0;
+    Triangle *bad_triangles = malloc(sizeof(Triangle) * 2 * pointc);
 
     for (int i = 0; i < pointc; i++)
     {
-        Triangle *bad_triangles = malloc(sizeof(Triangle) * 2 * pointc);
+        // Add this point to the triangulation.
+        int bad_triangle_count = 0;;
+        // Triangle bad_triangles[2*pointc];
 
+        // Find the bad triangles to evict from triangulation (triangles that contain this point).
         for (int j = 0; j < triangle_count; ++j)
         {
+            if (triangulation[j].evicted) continue;
+
             // Is point inside triangle's circle?
 
             // Build circle
@@ -322,12 +335,16 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int wi
             if (sqrt(x_distance*x_distance + y_distance*y_distance) < circle.radius) {
                 bad_triangles[bad_triangle_count] = triangulation[j];
                 bad_triangle_count++;
+
+                // TODO(bkaylor): Actually remove these?
+                triangulation[j].evicted = true;
             }
         }
 
         Edge *polygon = malloc(sizeof(Edge) * bad_triangle_count * 3);
         int polygon_edge_count = 0;
 
+        // Add any unique edges from the bad triangles to the polygon.
         for (int j = 0; j < bad_triangle_count; j++)
         {
             Edge a, b, c;
@@ -338,8 +355,15 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int wi
             c.points[0] = bad_triangles[j].points[2];
             c.points[1] = bad_triangles[j].points[0];
 
+            // TODO(bkaylor): Roll this into three loops, one per edge?
+            bool is_a_unique = true;
+            bool is_b_unique = true;
+            bool is_c_unique = true;
             for (int k = 0; k < bad_triangle_count; k++)
             {
+                // TODO(bkaylor): Still not sure if this should be here. Probably.
+                if (k == j) continue;
+
                 Edge d, e, f;
                 d.points[0] = bad_triangles[k].points[0];
                 d.points[1] = bad_triangles[k].points[1];
@@ -348,25 +372,114 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int wi
                 f.points[0] = bad_triangles[k].points[2];
                 f.points[1] = bad_triangles[k].points[0];
 
-                // TODO(bkaylor): Whoops, I goofed. Add to polygon if there are NO equivalent edges.
-                // also, don't check your own triangle.
-                if (are_equivalent_edges(a, d) || are_equivalent_edges(a, e) || are_equivalent_edges(a, f)) {
-                    polygon[polygon_edge_count] = a;
-                    polygon_edge_count++;
+                if (!(are_equivalent_edges(a, d) || are_equivalent_edges(a, e) || are_equivalent_edges(a, f))) {
+                    is_a_unique = false;
                 }
 
-                if (are_equivalent_edges(b, d) || are_equivalent_edges(b, e) || are_equivalent_edges(b, f)) {
-                    polygon[polygon_edge_count] = b;
-                    polygon_edge_count++;
+                if (!(are_equivalent_edges(b, d) || are_equivalent_edges(b, e) || are_equivalent_edges(b, f))) {
+                    is_b_unique = false;
                 }
 
-                if (are_equivalent_edges(c, d) || are_equivalent_edges(c, e) || are_equivalent_edges(c, f)) {
-                    polygon[polygon_edge_count] = c;
-                    polygon_edge_count++;
+                if (!(are_equivalent_edges(c, d) || are_equivalent_edges(c, e) || are_equivalent_edges(c, f))) {
+                    is_c_unique = false;
                 }
             }
+
+            if (is_a_unique)
+            {
+                polygon[polygon_edge_count] = a;
+                polygon_edge_count++;
+            }
+
+            if (is_b_unique)
+            {
+                polygon[polygon_edge_count] = b;
+                polygon_edge_count++;
+            }
+
+            if (is_c_unique)
+            {
+                polygon[polygon_edge_count] = c;
+                polygon_edge_count++;
+            }
+        }
+
+        // Add a triangle to the triangulation for each edge on the polygon.
+        for (int j = 0; j < polygon_edge_count; j += 1)
+        {
+            Edge edge = polygon[j];
+
+            Triangle new_triangle;
+            new_triangle.points[0] = points[i];
+            new_triangle.points[1] = edge.points[0];
+            new_triangle.points[2] = edge.points[1];
+            new_triangle.evicted = false;
+
+            triangulation[triangle_count] = new_triangle;
+            triangle_count += 1;
+        }
+
+        // free(polygon);
+        // free(bad_triangles); // TODO(bkaylor): This is crashing us!
+    }
+
+    // Remove any triangles from the triangulation if they use a supertriangle vertex.
+    for (int j = 0; j < triangle_count; j += 1)
+    {
+        if (
+                (are_equivalent_points(triangulation[j].points[0], triangulation[0].points[0]) ||
+                 are_equivalent_points(triangulation[j].points[0], triangulation[0].points[1]) ||
+                 are_equivalent_points(triangulation[j].points[0], triangulation[0].points[2]))
+                ||
+                (are_equivalent_points(triangulation[j].points[1], triangulation[0].points[0]) ||
+                 are_equivalent_points(triangulation[j].points[1], triangulation[0].points[1]) ||
+                 are_equivalent_points(triangulation[j].points[1], triangulation[0].points[2]))
+                ||
+                (are_equivalent_points(triangulation[j].points[2], triangulation[0].points[0]) ||
+                 are_equivalent_points(triangulation[j].points[2], triangulation[0].points[1]) ||
+                 are_equivalent_points(triangulation[j].points[2], triangulation[0].points[2]))
+            )
+        {
+            triangulation[j].evicted = true;
         }
     }
+
+    // Print out triangles.
+    /*
+    for (int i = 0; i < triangle_count; i += 1)
+    {
+        Triangle t = triangulation[i];
+        if (t.evicted) continue;
+
+        printf("(%d, %d) ", t.points[0].x, t.points[0].y);
+        printf("(%d, %d) ", t.points[1].x, t.points[1].y);
+        printf("(%d, %d) ", t.points[2].x, t.points[2].y);
+        printf("\n");
+    }
+    */
+
+    // Draw the triangles (just in black wireframe while getting triangulation working- no colors).
+    SDL_SetRenderDrawColor(ren, points[0].r, points[0].g, points[0].b, 255);
+    SDL_RenderClear(ren);
+    SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
+
+    for (int i = 0; i < triangle_count; i += 1)
+    {
+        Triangle t = triangulation[i];
+        if (t.evicted) continue;
+
+        Point a, b, c;
+        a = t.points[0]; 
+        b = t.points[1]; 
+        c = t.points[2];
+
+        SDL_RenderDrawLine(ren, a.x, a.y, b.x, b.y);
+        SDL_RenderDrawLine(ren, b.x, b.y, c.x, c.y);
+        SDL_RenderDrawLine(ren, c.x, c.y, a.x, a.y);
+    }
+
+    // free(points);
+    // free(triangulation);
 }
 
 int are_equivalent_edges(Edge a, Edge b)
@@ -399,7 +512,8 @@ void voronoi(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int
 	{
 		for (int j = 0; j < window_h; ++j)
 		{
-			float distances[pointc];
+			// float distances[pointc];
+            float *distances = malloc(sizeof(float) * pointc);
             float x_distance, y_distance;
 			for (int k = 0; k < pointc; ++k)
 			{
