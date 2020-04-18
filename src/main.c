@@ -33,6 +33,13 @@ typedef struct Point_Struct
 	int b;
 } Point;
 
+typedef struct
+{
+    int r;
+    int g;
+    int b;
+} Color;
+
 typedef struct Triangle_Struct
 {
     Point points[3];
@@ -88,6 +95,7 @@ int main(int argc, char *argv[])
 	int frame = 0;
 	char frame_s[10];
 	char type_s[10];
+    char fast_s[10];
 	char point_s[10];
     int show_text = 1;
     int fast_mode = 0;
@@ -101,6 +109,7 @@ int main(int argc, char *argv[])
 	unsigned int start_time, end_time, frame_time;
 	frame_time = 0;
     sprintf(type_s, "Euclidean");
+    sprintf(fast_s, "Delaunay");
 
 	// Main Loop
 	while (!quit)
@@ -206,7 +215,7 @@ int main(int argc, char *argv[])
                 SDL_RenderCopy(ren, frame_texture, NULL, &frame_rect);
             }
 
-            SDL_Surface *type_surface = TTF_RenderText_Solid(font, type_s, font_color);
+            SDL_Surface *type_surface = TTF_RenderText_Solid(font, fast_mode ? fast_s : type_s, font_color);
             SDL_Texture *type_texture = SDL_CreateTextureFromSurface(ren, type_surface);
             int type_x, type_y;
             SDL_QueryTexture(type_texture, NULL, NULL, &type_x, &type_y);
@@ -248,6 +257,69 @@ int main(int argc, char *argv[])
 }
 
 /*
+void render_triangulation(SDL_Renderer *ren, Triangle *triangulation, int triangle_count)
+{
+    // Draw a wireframe of the triangulation.
+    SDL_SetRenderDrawColor(ren, foreground.r, foreground.g, foreground.b, 255);
+    SDL_RenderClear(ren);
+    SDL_SetRenderDrawColor(ren, background.r, background.g, background.b, 255);
+
+    for (int i = 0; i < triangle_count; i += 1)
+    {
+        Triangle t = triangulation[i];
+        if (t.evicted) continue;
+
+        Point a, b, c;
+        a = t.points[0]; 
+        b = t.points[1]; 
+        c = t.points[2];
+
+        SDL_RenderDrawLine(ren, a.x, a.y, b.x, b.y);
+        SDL_RenderDrawLine(ren, b.x, b.y, c.x, c.y);
+        SDL_RenderDrawLine(ren, c.x, c.y, a.x, a.y);
+    }
+}
+*/
+
+void draw_circle(SDL_Renderer *renderer, int32_t centreX, int32_t centreY, int32_t radius)
+{
+   const int32_t diameter = (radius * 2);
+
+   int32_t x = (radius - 1);
+   int32_t y = 0;
+   int32_t tx = 1;
+   int32_t ty = 1;
+   int32_t error = (tx - diameter);
+
+   while (x >= y)
+   {
+      //  Each of the following renders an octant of the circle
+      SDL_RenderDrawPoint(renderer, centreX + x, centreY - y);
+      SDL_RenderDrawPoint(renderer, centreX + x, centreY + y);
+      SDL_RenderDrawPoint(renderer, centreX - x, centreY - y);
+      SDL_RenderDrawPoint(renderer, centreX - x, centreY + y);
+      SDL_RenderDrawPoint(renderer, centreX + y, centreY - x);
+      SDL_RenderDrawPoint(renderer, centreX + y, centreY + x);
+      SDL_RenderDrawPoint(renderer, centreX - y, centreY - x);
+      SDL_RenderDrawPoint(renderer, centreX - y, centreY + x);
+
+      if (error <= 0)
+      {
+         ++y;
+         error += ty;
+         ty += 2;
+      }
+
+      if (error > 0)
+      {
+         --x;
+         tx += 2;
+         error += (tx - diameter);
+      }
+   }
+}
+
+/*
    TODO(bryan): Implement delaunay triangulation algorithm pseudocode
 
    function BowyerWatson (pointList)
@@ -278,6 +350,16 @@ int main(int argc, char *argv[])
 // TODO(bkaylor): Occasional crash during a pass on fast mode, before it prints or draws anything.
 void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int window_w, int window_h)
 {
+    Color background;
+    background.r = (rand() %  128) + 128;
+    background.g = (rand() %  128) + 128;
+    background.b = (rand() %  128) + 128;
+
+    Color foreground;
+    foreground.r = rand() %  128;
+    foreground.g = rand() %  128;
+    foreground.b = rand() %  128;
+
 	// Assign random points
 	Point *points = malloc(sizeof(Point) * pointc);
 
@@ -419,6 +501,36 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int wi
             triangle_count += 1;
         }
 
+        // render_triangulation(ren, triangulation, triangle_count);
+
+        // Intermediate drawing for debugging
+        /*
+        if (polygon_edge_count > 0)
+        {
+            // Draw a wireframe of the triangulation.
+            SDL_SetRenderDrawColor(ren, foreground.r, foreground.g, foreground.b, 255);
+            SDL_RenderClear(ren);
+            SDL_SetRenderDrawColor(ren, background.r, background.g, background.b, 255);
+
+            for (int i = 0; i < triangle_count; i += 1)
+            {
+                Triangle t = triangulation[i];
+                if (t.evicted) continue;
+
+                Point a, b, c;
+                a = t.points[0]; 
+                b = t.points[1]; 
+                c = t.points[2];
+
+                SDL_RenderDrawLine(ren, a.x, a.y, b.x, b.y);
+                SDL_RenderDrawLine(ren, b.x, b.y, c.x, c.y);
+                SDL_RenderDrawLine(ren, c.x, c.y, a.x, a.y);
+                SDL_RenderPresent(ren);
+                SDL_Delay(500/triangle_count);
+            }
+        }
+        */
+
         // free(polygon);
         // free(bad_triangles); // TODO(bkaylor): This is crashing us!
     }
@@ -458,10 +570,10 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int wi
     }
     */
 
-    // Draw the triangles (just in black wireframe while getting triangulation working- no colors).
-    SDL_SetRenderDrawColor(ren, points[0].r, points[0].g, points[0].b, 255);
+    // Draw a wireframe of the triangulation.
+    SDL_SetRenderDrawColor(ren, foreground.r, foreground.g, foreground.b, 255);
     SDL_RenderClear(ren);
-    SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
+    SDL_SetRenderDrawColor(ren, background.r, background.g, background.b, 255);
 
     for (int i = 0; i < triangle_count; i += 1)
     {
@@ -477,6 +589,15 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int wi
         SDL_RenderDrawLine(ren, b.x, b.y, c.x, c.y);
         SDL_RenderDrawLine(ren, c.x, c.y, a.x, a.y);
     }
+
+    for (int i = 0; i < pointc; i += 1)
+    {
+        Point p = points[i];
+        SDL_SetRenderDrawColor(ren, p.r, p.g, p.b, 255);
+        draw_circle(ren, p.x, p.y, 2);
+    }
+
+    SDL_RenderPresent(ren);
 
     // free(points);
     // free(triangulation);
