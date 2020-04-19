@@ -40,22 +40,30 @@ typedef struct
     int b;
 } Color;
 
-typedef struct Triangle_Struct
-{
-    Point points[3];
-    bool evicted;
-} Triangle;
-
 typedef struct Circle_Struct
 {
     Point center;
     float radius;
 } Circle;
 
+typedef struct Triangle_Struct
+{
+    Point points[3];
+    Circle circumcircle;
+    bool evicted;
+} Triangle;
+
 typedef struct Edge_Struct
 {
     Point points[2];
 } Edge;
+
+typedef struct
+{
+    Point point;
+    float slope;
+    int b;
+} Line;
 
 void voronoi(SDL_Renderer *, int, enum Distance_Formula, int, int);
 void fast(SDL_Renderer *, int, enum Distance_Formula, int, int);
@@ -347,21 +355,41 @@ void draw_circle(SDL_Renderer *renderer, int32_t centreX, int32_t centreY, int32
       return triangulation
 */
 
+// TODO(bkaylor): What should these actually be?
+#define MAX_POINTS 500
+#define MAX_TRIANGLES MAX_POINTS
+#define MAX_EDGES MAX_TRIANGLES
+void fast_v2(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int window_w, int window_h)
+{
+    Point points[MAX_POINTS];
+    for (int i = 0; i < pointc; i += 1)
+    {
+        Point p;
+        p.x = rand() % window_w;
+        p.y = rand() % window_h;
+    }
+
+    Triangle triangulation[MAX_TRIANGLES];
+}
+
 // TODO(bkaylor): Occasional crash during a pass on fast mode, before it prints or draws anything.
+//                Seems to happen more when there are a relatively small amount of points.
 void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int window_w, int window_h)
 {
-    Color background;
-    background.r = (rand() %  128) + 128;
-    background.g = (rand() %  128) + 128;
-    background.b = (rand() %  128) + 128;
-
     Color foreground;
-    foreground.r = rand() %  128;
-    foreground.g = rand() %  128;
-    foreground.b = rand() %  128;
+    foreground.r = (rand() %  128) + 128;
+    foreground.g = (rand() %  128) + 128;
+    foreground.b = (rand() %  128) + 128;
+    // foreground.r = 255; foreground.g = 255; foreground.b = 255;
+
+    Color background;
+    background.r = rand() %  128;
+    background.g = rand() %  128;
+    background.b = rand() %  128;
+    // background.r = 0; background.g = 0; background.b = 0;
 
 	// Assign random points
-	Point *points = malloc(sizeof(Point) * pointc);
+	Point points[MAX_POINTS];
 
 	for (int i = 0; i < pointc; ++i)
 	{
@@ -373,42 +401,91 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int wi
 		points[i].b = rand() % 255;
     }
 
-    // (2n - 1 - b) triangles
-    Triangle *triangulation = malloc(sizeof(Triangle) * 2 * pointc);
+    Triangle triangulation[MAX_TRIANGLES];
 
     // Add supertriangle 
-    Point supertriangle_lower_left = {-2 * window_w, -2 * window_h};
-    Point supertriangle_upper_middle = {window_w/2, 2*window_h};
-    Point supertriangle_lower_right = {2 * window_w, -2*window_h};
+    Point supertriangle_lower_left = {-3 * window_w, -3 * window_h};
+    Point supertriangle_upper_middle = {window_w/3, 3*window_h};
+    Point supertriangle_lower_right = {3 * window_w, -3*window_h};
     triangulation[0].points[0] = supertriangle_lower_left;
     triangulation[0].points[1] = supertriangle_upper_middle;
     triangulation[0].points[2] = supertriangle_lower_right;
     triangulation[0].evicted = false;
 
     int triangle_count = 1;
-    // int bad_triangle_count = 0;
-    Triangle *bad_triangles = malloc(sizeof(Triangle) * 2 * pointc);
+    Triangle bad_triangles[MAX_TRIANGLES];
 
     for (int i = 0; i < pointc; i++)
     {
         // Add this point to the triangulation.
-        int bad_triangle_count = 0;;
-        // Triangle bad_triangles[2*pointc];
+        int bad_triangle_count = 0;
 
         // Find the bad triangles to evict from triangulation (triangles that contain this point).
         for (int j = 0; j < triangle_count; ++j)
         {
             if (triangulation[j].evicted) continue;
 
-            // Is point inside triangle's circle?
+            // Is point inside triangle's circumcircle?
 
-            // Build circle
-            Point center = {(triangulation[j].points[0].x + triangulation[j].points[1].x + triangulation[j].points[2].x) / 3,
-                            (triangulation[j].points[0].y + triangulation[j].points[1].y + triangulation[j].points[2].y) / 3};
+            // TODO(bkaylor): My circumcircles are still wrong as hell.
+            // The circumcenter of a triangle is not just an average of the 3 points.
+            // You have to get the intersection of the perpindicular bisectors of two sides.
 
-            int x_distance = abs(center.x - triangulation[j].points[0].x);
-            int y_distance = abs(center.y - triangulation[j].points[0].y);
-            Circle circle = {center, sqrt(x_distance*x_distance + y_distance*y_distance)};
+            Triangle triangle = triangulation[j];
+
+            Line bisector_01;
+            bisector_01.point.x = (triangle.points[0].x + triangle.points[1].x)/2;
+            bisector_01.point.y = (triangle.points[0].y + triangle.points[1].y)/2;
+
+            if ((triangle.points[0].y - triangle.points[1].y) == 0)
+            {
+                bisector_01.slope = INT_MAX;
+            }
+            else
+            {
+                bisector_01.slope = (float)(triangle.points[0].x - triangle.points[1].x) / (float)(triangle.points[0].y - triangle.points[1].y);
+            }
+            bisector_01.b = bisector_01.point.y - (bisector_01.slope * bisector_01.point.x);
+
+            Line bisector_12;
+            bisector_12.point.x = (triangle.points[1].x + triangle.points[2].x)/2;
+            bisector_12.point.y = (triangle.points[1].y + triangle.points[2].y)/2;
+
+            if ((triangle.points[1].y - triangle.points[2].y) == 0)
+            {
+                bisector_12.slope = INT_MAX;
+            }
+            else
+            {
+                bisector_12.slope = (float)(triangle.points[1].x - triangle.points[2].x) / (float)(triangle.points[1].y - triangle.points[2].y);
+            }
+            bisector_12.b = bisector_12.point.y - (bisector_12.slope * bisector_12.point.x);
+
+            /*
+            y = m1x + b1
+            y = m2x + b2
+            x = (y - b2)/m2
+
+            y = m1 ((y - b2) / m2) + b1
+
+            m1x + b1 = m2x + b2
+            x = (b1 - b2) / (m2 - m1)
+
+            y = m1
+            */
+
+            Point center;
+            center.x = (bisector_01.b - bisector_12.b) / (bisector_01.slope - bisector_12.slope);
+            center.y = (bisector_01.slope * center.x) + bisector_01.b;
+
+            float x_distance = abs(center.x - triangulation[j].points[0].x);
+            float y_distance = abs(center.y - triangulation[j].points[0].y);
+
+            Circle circle;
+            circle.center = center;
+            circle.radius = sqrtf(x_distance*x_distance + y_distance*y_distance);
+
+            triangulation[j].circumcircle = circle;
 
             // Check if point inside    
             x_distance = abs(circle.center.x - points[i].x);
@@ -416,95 +493,98 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int wi
 
             if (sqrt(x_distance*x_distance + y_distance*y_distance) < circle.radius) {
                 bad_triangles[bad_triangle_count] = triangulation[j];
-                bad_triangle_count++;
+                bad_triangle_count += 1;
 
-                // TODO(bkaylor): Actually remove these?
                 triangulation[j].evicted = true;
             }
         }
 
-        Edge *polygon = malloc(sizeof(Edge) * bad_triangle_count * 3);
-        int polygon_edge_count = 0;
-
-        // Add any unique edges from the bad triangles to the polygon.
-        for (int j = 0; j < bad_triangle_count; j++)
+        if (bad_triangle_count > 0)
         {
-            Edge a, b, c;
-            a.points[0] = bad_triangles[j].points[0];
-            a.points[1] = bad_triangles[j].points[1];
-            b.points[0] = bad_triangles[j].points[1];
-            b.points[1] = bad_triangles[j].points[2];
-            c.points[0] = bad_triangles[j].points[2];
-            c.points[1] = bad_triangles[j].points[0];
+            Edge polygon[MAX_EDGES];
+            int polygon_edge_count = 0;
 
-            // TODO(bkaylor): Roll this into three loops, one per edge?
-            bool is_a_unique = true;
-            bool is_b_unique = true;
-            bool is_c_unique = true;
-            for (int k = 0; k < bad_triangle_count; k++)
+            // Add any unique edges from the bad triangles to the polygon.
+            for (int j = 0; j < bad_triangle_count; j++)
             {
-                // TODO(bkaylor): Still not sure if this should be here. Probably.
-                if (k == j) continue;
+                Edge a, b, c;
+                a.points[0] = bad_triangles[j].points[0];
+                a.points[1] = bad_triangles[j].points[1];
+                b.points[0] = bad_triangles[j].points[1];
+                b.points[1] = bad_triangles[j].points[2];
+                c.points[0] = bad_triangles[j].points[2];
+                c.points[1] = bad_triangles[j].points[0];
 
-                Edge d, e, f;
-                d.points[0] = bad_triangles[k].points[0];
-                d.points[1] = bad_triangles[k].points[1];
-                e.points[0] = bad_triangles[k].points[1];
-                e.points[1] = bad_triangles[k].points[2];
-                f.points[0] = bad_triangles[k].points[2];
-                f.points[1] = bad_triangles[k].points[0];
+                // TODO(bkaylor): Roll this into three loops, one per edge?
+                bool is_a_unique = true;
+                bool is_b_unique = true;
+                bool is_c_unique = true;
+                for (int k = 0; k < bad_triangle_count; k++)
+                {
+                    // TODO(bkaylor): Still not sure if this should be here. Probably.
+                    if (k == j) continue;
 
-                if (!(are_equivalent_edges(a, d) || are_equivalent_edges(a, e) || are_equivalent_edges(a, f))) {
-                    is_a_unique = false;
+                    Edge d, e, f;
+                    d.points[0] = bad_triangles[k].points[0];
+                    d.points[1] = bad_triangles[k].points[1];
+                    e.points[0] = bad_triangles[k].points[1];
+                    e.points[1] = bad_triangles[k].points[2];
+                    f.points[0] = bad_triangles[k].points[2];
+                    f.points[1] = bad_triangles[k].points[0];
+
+                    if (are_equivalent_edges(a, d) || are_equivalent_edges(a, e) || are_equivalent_edges(a, f)) {
+                        is_a_unique = false;
+                    }
+
+                    if (are_equivalent_edges(b, d) || are_equivalent_edges(b, e) || are_equivalent_edges(b, f)) {
+                        is_b_unique = false;
+                    }
+
+                    if (are_equivalent_edges(c, d) || are_equivalent_edges(c, e) || are_equivalent_edges(c, f)) {
+                        is_c_unique = false;
+                    }
                 }
 
-                if (!(are_equivalent_edges(b, d) || are_equivalent_edges(b, e) || are_equivalent_edges(b, f))) {
-                    is_b_unique = false;
+                if (is_a_unique)
+                {
+                    polygon[polygon_edge_count] = a;
+                    polygon_edge_count++;
                 }
 
-                if (!(are_equivalent_edges(c, d) || are_equivalent_edges(c, e) || are_equivalent_edges(c, f))) {
-                    is_c_unique = false;
+                if (is_b_unique)
+                {
+                    polygon[polygon_edge_count] = b;
+                    polygon_edge_count++;
+                }
+
+                if (is_c_unique)
+                {
+                    polygon[polygon_edge_count] = c;
+                    polygon_edge_count++;
                 }
             }
 
-            if (is_a_unique)
+            // Add a triangle to the triangulation for each edge on the polygon.
+            for (int j = 0; j < polygon_edge_count; j += 1)
             {
-                polygon[polygon_edge_count] = a;
-                polygon_edge_count++;
+                Edge edge = polygon[j];
+
+                Triangle new_triangle;
+                new_triangle.points[0] = points[i];
+                new_triangle.points[1] = edge.points[0];
+                new_triangle.points[2] = edge.points[1];
+                new_triangle.evicted = false;
+
+                triangulation[triangle_count] = new_triangle;
+                triangle_count += 1;
             }
 
-            if (is_b_unique)
-            {
-                polygon[polygon_edge_count] = b;
-                polygon_edge_count++;
-            }
-
-            if (is_c_unique)
-            {
-                polygon[polygon_edge_count] = c;
-                polygon_edge_count++;
-            }
+            // printf("For point #%d, added %d triangles.\n", i, polygon_edge_count);
         }
-
-        // Add a triangle to the triangulation for each edge on the polygon.
-        for (int j = 0; j < polygon_edge_count; j += 1)
-        {
-            Edge edge = polygon[j];
-
-            Triangle new_triangle;
-            new_triangle.points[0] = points[i];
-            new_triangle.points[1] = edge.points[0];
-            new_triangle.points[2] = edge.points[1];
-            new_triangle.evicted = false;
-
-            triangulation[triangle_count] = new_triangle;
-            triangle_count += 1;
-        }
-
-        // render_triangulation(ren, triangulation, triangle_count);
 
         // Intermediate drawing for debugging
-        /*
+        
+#if 0
         if (polygon_edge_count > 0)
         {
             // Draw a wireframe of the triangulation.
@@ -526,13 +606,10 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int wi
                 SDL_RenderDrawLine(ren, b.x, b.y, c.x, c.y);
                 SDL_RenderDrawLine(ren, c.x, c.y, a.x, a.y);
                 SDL_RenderPresent(ren);
-                SDL_Delay(500/triangle_count);
+                // SDL_Delay(500/triangle_count);
             }
         }
-        */
-
-        // free(polygon);
-        // free(bad_triangles); // TODO(bkaylor): This is crashing us!
+#endif
     }
 
     // Remove any triangles from the triangulation if they use a supertriangle vertex.
@@ -557,7 +634,7 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int wi
     }
 
     // Print out triangles.
-    /*
+#if 0
     for (int i = 0; i < triangle_count; i += 1)
     {
         Triangle t = triangulation[i];
@@ -566,24 +643,35 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int wi
         printf("(%d, %d) ", t.points[0].x, t.points[0].y);
         printf("(%d, %d) ", t.points[1].x, t.points[1].y);
         printf("(%d, %d) ", t.points[2].x, t.points[2].y);
+        printf("(%d, %d, %f) ", t.circumcircle.center.x, t.circumcircle.center.y, t.circumcircle.radius);
         printf("\n");
     }
-    */
+#endif
 
     // Draw a wireframe of the triangulation.
-    SDL_SetRenderDrawColor(ren, foreground.r, foreground.g, foreground.b, 255);
-    SDL_RenderClear(ren);
     SDL_SetRenderDrawColor(ren, background.r, background.g, background.b, 255);
+    SDL_RenderClear(ren);
+    // SDL_SetRenderDrawColor(ren, foreground.r, foreground.g, foreground.b, 255);
 
     for (int i = 0; i < triangle_count; i += 1)
     {
         Triangle t = triangulation[i];
         if (t.evicted) continue;
+        if (t.evicted)
+        {
+            SDL_SetRenderDrawColor(ren, 255, 0, 0, 255);
+        }
+        else
+        {
+            SDL_SetRenderDrawColor(ren, foreground.r, foreground.g, foreground.b, 255);
+        }
 
         Point a, b, c;
         a = t.points[0]; 
         b = t.points[1]; 
         c = t.points[2];
+
+        draw_circle(ren, t.circumcircle.center.x, t.circumcircle.center.y, t.circumcircle.radius);
 
         SDL_RenderDrawLine(ren, a.x, a.y, b.x, b.y);
         SDL_RenderDrawLine(ren, b.x, b.y, c.x, c.y);
