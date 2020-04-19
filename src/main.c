@@ -372,6 +372,65 @@ void fast_v2(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int
     Triangle triangulation[MAX_TRIANGLES];
 }
 
+Circle get_circumcircle_of_triangle(Triangle triangle)
+{
+        Line bisector_01;
+        bisector_01.point.x = (triangle.points[0].x + triangle.points[1].x)/2;
+        bisector_01.point.y = (triangle.points[0].y + triangle.points[1].y)/2;
+
+        if ((triangle.points[1].y - triangle.points[0].y) == 0)
+        {
+            bisector_01.slope = INT_MAX;
+        }
+        else
+        {
+            bisector_01.slope = -(float)(triangle.points[1].x - triangle.points[0].x) / (float)(triangle.points[1].y - triangle.points[0].y);
+        }
+        bisector_01.b = bisector_01.point.y - (bisector_01.slope * bisector_01.point.x);
+
+        Line bisector_12;
+        bisector_12.point.x = (triangle.points[1].x + triangle.points[2].x)/2;
+        bisector_12.point.y = (triangle.points[1].y + triangle.points[2].y)/2;
+
+        if ((triangle.points[2].y - triangle.points[1].y) == 0)
+        {
+            bisector_12.slope = INT_MAX;
+        }
+        else
+        {
+            bisector_12.slope = -(float)(triangle.points[2].x - triangle.points[1].x) / (float)(triangle.points[2].y - triangle.points[1].y);
+        }
+        bisector_12.b = bisector_12.point.y - (bisector_12.slope * bisector_12.point.x);
+
+        /*
+        y = m1x + b1
+        y = m2x + b2
+        x = (y - b2)/m2
+
+        y = m1 ((y - b2) / m2) + b1
+
+        m1x + b1 = m2x + b2
+        x = (b1 - b2) / (m2 - m1)
+
+        y = m1
+        */
+
+        Point center;
+        center.x = (bisector_01.b - bisector_12.b) / (bisector_12.slope - bisector_01.slope);
+        center.y = (bisector_01.slope * center.x) + bisector_01.b;
+
+        // Get the distance from the circumcenter to one of the triangle's points.
+        float x_distance = abs(center.x - triangle.points[0].x);
+        float y_distance = abs(center.y - triangle.points[0].y);
+
+        Circle circle;
+        circle.center = center;
+        circle.radius = sqrtf(x_distance*x_distance + y_distance*y_distance);
+
+        return circle;
+
+}
+
 // TODO(bkaylor): Occasional crash during a pass on fast mode, before it prints or draws anything.
 //                Seems to happen more when there are a relatively small amount of points.
 void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int window_w, int window_h)
@@ -427,71 +486,15 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int wi
 
             // Is point inside triangle's circumcircle?
 
-            // TODO(bkaylor): My circumcircles are still wrong as hell.
             // The circumcenter of a triangle is not just an average of the 3 points.
             // You have to get the intersection of the perpindicular bisectors of two sides.
-
-            Triangle triangle = triangulation[j];
-
-            Line bisector_01;
-            bisector_01.point.x = (triangle.points[0].x + triangle.points[1].x)/2;
-            bisector_01.point.y = (triangle.points[0].y + triangle.points[1].y)/2;
-
-            if ((triangle.points[0].y - triangle.points[1].y) == 0)
-            {
-                bisector_01.slope = INT_MAX;
-            }
-            else
-            {
-                bisector_01.slope = (float)(triangle.points[0].x - triangle.points[1].x) / (float)(triangle.points[0].y - triangle.points[1].y);
-            }
-            bisector_01.b = bisector_01.point.y - (bisector_01.slope * bisector_01.point.x);
-
-            Line bisector_12;
-            bisector_12.point.x = (triangle.points[1].x + triangle.points[2].x)/2;
-            bisector_12.point.y = (triangle.points[1].y + triangle.points[2].y)/2;
-
-            if ((triangle.points[1].y - triangle.points[2].y) == 0)
-            {
-                bisector_12.slope = INT_MAX;
-            }
-            else
-            {
-                bisector_12.slope = (float)(triangle.points[1].x - triangle.points[2].x) / (float)(triangle.points[1].y - triangle.points[2].y);
-            }
-            bisector_12.b = bisector_12.point.y - (bisector_12.slope * bisector_12.point.x);
-
-            /*
-            y = m1x + b1
-            y = m2x + b2
-            x = (y - b2)/m2
-
-            y = m1 ((y - b2) / m2) + b1
-
-            m1x + b1 = m2x + b2
-            x = (b1 - b2) / (m2 - m1)
-
-            y = m1
-            */
-
-            Point center;
-            center.x = (bisector_01.b - bisector_12.b) / (bisector_01.slope - bisector_12.slope);
-            center.y = (bisector_01.slope * center.x) + bisector_01.b;
-
-            float x_distance = abs(center.x - triangulation[j].points[0].x);
-            float y_distance = abs(center.y - triangulation[j].points[0].y);
-
-            Circle circle;
-            circle.center = center;
-            circle.radius = sqrtf(x_distance*x_distance + y_distance*y_distance);
-
-            triangulation[j].circumcircle = circle;
+            triangulation[j].circumcircle = get_circumcircle_of_triangle(triangulation[j]);
 
             // Check if point inside    
-            x_distance = abs(circle.center.x - points[i].x);
-            y_distance = abs(circle.center.y - points[i].y);
+            float x_distance = abs(triangulation[j].circumcircle.center.x - points[i].x);
+            float y_distance = abs(triangulation[j].circumcircle.center.y - points[i].y);
 
-            if (sqrt(x_distance*x_distance + y_distance*y_distance) < circle.radius) {
+            if (sqrt(x_distance*x_distance + y_distance*y_distance) < triangulation[j].circumcircle.radius) {
                 bad_triangles[bad_triangle_count] = triangulation[j];
                 bad_triangle_count += 1;
 
@@ -548,19 +551,19 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int wi
                 if (is_a_unique)
                 {
                     polygon[polygon_edge_count] = a;
-                    polygon_edge_count++;
+                    polygon_edge_count += 1;
                 }
 
                 if (is_b_unique)
                 {
                     polygon[polygon_edge_count] = b;
-                    polygon_edge_count++;
+                    polygon_edge_count += 1;
                 }
 
                 if (is_c_unique)
                 {
                     polygon[polygon_edge_count] = c;
-                    polygon_edge_count++;
+                    polygon_edge_count += 1;
                 }
             }
 
@@ -580,36 +583,34 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int wi
             }
 
             // printf("For point #%d, added %d triangles.\n", i, polygon_edge_count);
-        }
-
-        // Intermediate drawing for debugging
-        
 #if 0
-        if (polygon_edge_count > 0)
-        {
-            // Draw a wireframe of the triangulation.
-            SDL_SetRenderDrawColor(ren, foreground.r, foreground.g, foreground.b, 255);
-            SDL_RenderClear(ren);
-            SDL_SetRenderDrawColor(ren, background.r, background.g, background.b, 255);
-
-            for (int i = 0; i < triangle_count; i += 1)
+            // Intermediate drawing for debugging
+            if (polygon_edge_count > 0)
             {
-                Triangle t = triangulation[i];
-                if (t.evicted) continue;
+                // Draw a wireframe of the triangulation.
+                SDL_SetRenderDrawColor(ren, foreground.r, foreground.g, foreground.b, 255);
+                SDL_RenderClear(ren);
+                SDL_SetRenderDrawColor(ren, background.r, background.g, background.b, 255);
 
-                Point a, b, c;
-                a = t.points[0]; 
-                b = t.points[1]; 
-                c = t.points[2];
+                for (int i = 0; i < triangle_count; i += 1)
+                {
+                    Triangle t = triangulation[i];
+                    if (t.evicted) continue;
 
-                SDL_RenderDrawLine(ren, a.x, a.y, b.x, b.y);
-                SDL_RenderDrawLine(ren, b.x, b.y, c.x, c.y);
-                SDL_RenderDrawLine(ren, c.x, c.y, a.x, a.y);
-                SDL_RenderPresent(ren);
-                // SDL_Delay(500/triangle_count);
+                    Point a, b, c;
+                    a = t.points[0]; 
+                    b = t.points[1]; 
+                    c = t.points[2];
+
+                    SDL_RenderDrawLine(ren, a.x, a.y, b.x, b.y);
+                    SDL_RenderDrawLine(ren, b.x, b.y, c.x, c.y);
+                    SDL_RenderDrawLine(ren, c.x, c.y, a.x, a.y);
+                    SDL_RenderPresent(ren);
+                    // SDL_Delay(500/triangle_count);
+                }
             }
-        }
 #endif
+        }
     }
 
     // Remove any triangles from the triangulation if they use a supertriangle vertex.
@@ -653,6 +654,21 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int wi
     SDL_RenderClear(ren);
     // SDL_SetRenderDrawColor(ren, foreground.r, foreground.g, foreground.b, 255);
 
+    // Draw circumcircles.
+    SDL_SetRenderDrawColor(ren, background.r + 15, background.g + 15, background.b + 15, 255);
+    for (int i = 0; i < triangle_count; i += 1)
+    {
+        Triangle t = triangulation[i];
+        if (t.evicted) continue;
+        if ((t.circumcircle.center.x == INT_MAX || t.circumcircle.center.x == INT_MIN) || 
+            (t.circumcircle.center.y == INT_MAX || t.circumcircle.center.y == INT_MIN))
+        {
+            continue;
+        }
+        draw_circle(ren, t.circumcircle.center.x, t.circumcircle.center.y, t.circumcircle.radius);
+    }
+
+    // Draw triangles.
     for (int i = 0; i < triangle_count; i += 1)
     {
         Triangle t = triangulation[i];
@@ -670,8 +686,6 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int wi
         a = t.points[0]; 
         b = t.points[1]; 
         c = t.points[2];
-
-        draw_circle(ren, t.circumcircle.center.x, t.circumcircle.center.y, t.circumcircle.radius);
 
         SDL_RenderDrawLine(ren, a.x, a.y, b.x, b.y);
         SDL_RenderDrawLine(ren, b.x, b.y, c.x, c.y);
