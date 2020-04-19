@@ -356,21 +356,9 @@ void draw_circle(SDL_Renderer *renderer, int32_t centreX, int32_t centreY, int32
 */
 
 // TODO(bkaylor): What should these actually be?
-#define MAX_POINTS 500
+#define MAX_POINTS 1000 
 #define MAX_TRIANGLES MAX_POINTS
 #define MAX_EDGES MAX_TRIANGLES
-void fast_v2(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int window_w, int window_h)
-{
-    Point points[MAX_POINTS];
-    for (int i = 0; i < pointc; i += 1)
-    {
-        Point p;
-        p.x = rand() % window_w;
-        p.y = rand() % window_h;
-    }
-
-    Triangle triangulation[MAX_TRIANGLES];
-}
 
 Circle get_circumcircle_of_triangle(Triangle triangle)
 {
@@ -439,13 +427,11 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int wi
     foreground.r = (rand() %  128) + 128;
     foreground.g = (rand() %  128) + 128;
     foreground.b = (rand() %  128) + 128;
-    // foreground.r = 255; foreground.g = 255; foreground.b = 255;
 
     Color background;
     background.r = rand() %  128;
     background.g = rand() %  128;
     background.b = rand() %  128;
-    // background.r = 0; background.g = 0; background.b = 0;
 
 	// Assign random points
 	Point points[MAX_POINTS];
@@ -660,6 +646,7 @@ void fast(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int wi
     {
         Triangle t = triangulation[i];
         if (t.evicted) continue;
+        // TODO(bkaylor): There should be a real way to resolve this earlier, where the center is computed..
         if ((t.circumcircle.center.x == INT_MAX || t.circumcircle.center.x == INT_MIN) || 
             (t.circumcircle.center.y == INT_MAX || t.circumcircle.center.y == INT_MIN))
         {
