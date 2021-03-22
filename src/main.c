@@ -31,6 +31,8 @@ typedef struct Point_Struct
 	int r;
 	int g;
 	int b;
+    int cell_x;
+    int cell_y;
 } Point;
 
 typedef struct
@@ -66,6 +68,7 @@ typedef struct
 } Line;
 
 void voronoi(SDL_Renderer *, int, enum Distance_Formula, int, int);
+void grid_voronoi(SDL_Renderer *, int, enum Distance_Formula, int, int);
 void fast(SDL_Renderer *, int, enum Distance_Formula, int, int);
 int are_equivalent_edges(Edge, Edge);
 int are_equivalent_points(Point, Point);
@@ -107,6 +110,7 @@ int main(int argc, char *argv[])
 	char point_s[10];
     int show_text = 1;
     int fast_mode = 0;
+    int grid_mode = 0;
 
 	enum Distance_Formula dist_type = EUCLIDEAN;
 	int pointc = 20;
@@ -169,6 +173,14 @@ int main(int argc, char *argv[])
                                 }
 								break;
 
+							case SDLK_g:
+                                if (grid_mode == 1) {
+                                    grid_mode = 0;
+                                } else if (grid_mode == 0) {
+                                    grid_mode = 1;
+                                }
+								break;
+
                             case SDLK_f:
                                 if (fast_mode == 1) {
                                     fast_mode = 0;
@@ -204,7 +216,11 @@ int main(int argc, char *argv[])
             if (fast_mode) {
                 fast(ren, pointc, dist_type, window_w, window_h);
             } else {
-                voronoi(ren, pointc, dist_type, window_w, window_h);
+                if (grid_mode) {
+                    grid_voronoi(ren, pointc, dist_type, window_w, window_h);
+                } else {
+                    voronoi(ren, pointc, dist_type, window_w, window_h);
+                }
             }
             end_time = SDL_GetTicks();
 
@@ -710,60 +726,150 @@ void voronoi(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int
 
 	for (int i = 0; i < pointc; ++i)
 	{
-		points[i].x = rand() % window_w;
-		points[i].y = rand() % window_h;
+        Point *p = &points[i];
 
-		points[i].r = rand() % 255;
-		points[i].g = rand() % 255;
-		points[i].b = rand() % 255;
+		p->x = rand() % window_w;
+		p->y = rand() % window_h;
+
+		p->r = rand() % 255;
+		p->g = rand() % 255;
+		p->b = rand() % 255;
 	}
-	
+
 	for (int i = 0; i < window_w; ++i)
 	{
 		for (int j = 0; j < window_h; ++j)
 		{
-			// float distances[pointc];
-            float *distances = malloc(sizeof(float) * pointc);
-            float x_distance, y_distance;
+            float minimum_distance = 100000.0f;
+            int minimum_index = 0;
+	
 			for (int k = 0; k < pointc; ++k)
 			{
+                Point *p = &points[k];
 				// Get distance from each point
+                float distance = 0.0f;
 				switch(dist_type)
 				{
 					case (MANHATTAN):
-						distances[k] = abs(points[k].x - i) + abs(points[k].y - j);
+						distance = abs(p->x - i) + abs(p->y - j);
 						break;
 					case (EUCLIDEAN):
 					default:
-                        x_distance = abs(points[k].x - i);
-                        y_distance = abs(points[k].y - j);
-						distances[k] = (x_distance * x_distance) + (y_distance * y_distance);
+                        float x_distance = p->x - i;
+                        float y_distance = p->y - j;
+						distance = (x_distance * x_distance) + (y_distance * y_distance); // Skipping the sqrt here.
 						break;
 
 				}
+
+                if (distance < minimum_distance)
+                {
+                    minimum_distance = distance;
+                    minimum_index = k;
+                }
 			}
 
 			// Assign color based on closest
-			int minind = 0;
+            // Color the points themselves black
+            if (minimum_distance < 2.0)
+            {
+                SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
+            }
+            else
+            {
+                SDL_SetRenderDrawColor(ren, points[minimum_index].r, points[minimum_index].b, points[minimum_index].g, 255);
+            }
+
+			// Draw pixel
+			SDL_RenderDrawPoint(ren, i, j);
+		}
+	}
+}
+
+
+// This isn't really faster than the non-grid version in an unoptimized build.
+void grid_voronoi(SDL_Renderer *ren, int pointc, enum Distance_Formula dist_type, int window_w, int window_h)
+{
+	// Assign random points
+	Point *points = malloc(sizeof(Point) * pointc);
+
+    // Define the subdivisions of the grid
+    int NUM_COLUMNS = 20;
+    int NUM_ROWS    = 20;
+
+    int cell_width  = window_w / NUM_COLUMNS;
+    int cell_height = window_h / NUM_ROWS; 
+
+	for (int i = 0; i < pointc; ++i)
+	{
+        Point *p = &points[i];
+		p->x = rand() % window_w;
+		p->y = rand() % window_h;
+
+        p->cell_x = p->x / cell_width;
+        p->cell_y = p->y / cell_height;
+
+		p->r = rand() % 255;
+		p->g = rand() % 255;
+		p->b = rand() % 255;
+	}
+
+    // Iterate over all the pixels
+	for (int i = 0; i < window_w; ++i)
+	{
+		for (int j = 0; j < window_h; ++j)
+		{
+            float minimum_distance = 100000.0f;
+            int minimum_index = 0;
+
+            int this_cell_x = i / cell_width;
+            int this_cell_y = j / cell_height;
+	
 			for (int k = 0; k < pointc; ++k)
 			{
-				if (distances[k] < distances[minind])
+                Point *p = &points[k];
+
+                // Early exit if we're not in an adjacent grid cell
+                if (!(abs(p->cell_x-this_cell_x)<=1 && abs(p->cell_y-this_cell_y<=1)))
+                {
+                    continue;
+                }
+
+				// Get distance from each point
+                float distance = 0.0f;
+				switch(dist_type)
 				{
-					minind = k;
+					case (MANHATTAN):
+						distance = abs(p->x - i) + abs(p->y - j);
+						break;
+					case (EUCLIDEAN):
+					default:
+                        float x_distance = p->x - i;
+                        float y_distance = p->y - j;
+						distance = (x_distance * x_distance) + (y_distance * y_distance); // Skipping the sqrt here.
+						break;
+
 				}
 
-				// Color the points themselves black
-				if (distances[minind] < 2.0)
-				{
-					SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
-				}
-				else
-				{
-					SDL_SetRenderDrawColor(ren, points[minind].r, points[minind].b, points[minind].g, 255);
-				}
+                if (distance < minimum_distance)
+                {
+                    minimum_distance = distance;
+                    minimum_index = k;
+                }
 			}
 
-			// Draw pixel! :^)
+			// Assign color based on closest
+            // Color the points themselves black
+            if (minimum_distance < 2.0)
+            {
+                SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
+            }
+            else
+            {
+                SDL_SetRenderDrawColor(ren, points[minimum_index].r, points[minimum_index].b, points[minimum_index].g, 255);
+            }
+
+			// Draw pixel
 			SDL_RenderDrawPoint(ren, i, j);
 		}
 	}
