@@ -9,3 +9,7 @@ typedef struct Point_Struct
     int cell_y;
 } Point;
 
+#define SCREEN_W 1280
+#define SCREEN_H 720
+#define POINT_COUNT 100
+

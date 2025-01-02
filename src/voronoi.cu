@@ -1,30 +1,32 @@
+
 #include <stdio.h>
+#include <float.h>
 
 #include "shared_with_cuda.h"
 
-__global__ void cuda_voronoi_kernel(Point *points, int pointc, int *indices, int w, int h)
+__global__ void voronoi_cuda_kernel(Point *points, char *pixels)
 {
     // threadIdx.x is thread id 
     //  blockDim.x is number of threads
 
-    int start_column = (w/blockDim.x) * threadIdx.x;
-    int   end_column = (w/blockDim.x) * (threadIdx.x+1);
-    printf("(%d/%d) running columns %d-%d\n", threadIdx.x, blockDim.x, start_column, end_column);
+    int pixels_per_thread = SCREEN_W / (gridDim.x * blockDim.x);
+    int start_column = (blockIdx.x * blockDim.x + threadIdx.x) * pixels_per_thread;
+    int   end_column = start_column + pixels_per_thread;
 
     for (int i = start_column; i < end_column; i += 1)
     {
-        for (int j = 0; j < h; j += 1)
+        for (int j = 0; j < SCREEN_H; j += 1)
         {
-            float minimum_distance = 100000.0f;
+            float minimum_distance = FLT_MAX;
             int minimum_index = 0;
 
-            for (int k = 0; k < pointc; ++k)
+            for (int k = 0; k < POINT_COUNT; k += 1)
             {
                 // Get distance from each point
                 float distance = 0.0f;
                 float x_distance = points[k].x - i;
                 float y_distance = points[k].y - j;
-                distance = (x_distance * x_distance) + (y_distance * y_distance); // Skipping the sqrt here.
+                distance = (x_distance * x_distance) + (y_distance * y_distance);
 
                 if (distance < minimum_distance)
                 {
@@ -33,26 +35,33 @@ __global__ void cuda_voronoi_kernel(Point *points, int pointc, int *indices, int
                 }
             }
 
-            int index = j + i*h;
-            indices[index] = minimum_index;
+            int offset = (j*4) * SCREEN_W + (i*4);
+            pixels[offset + 0] = (char)points[minimum_index].b;
+            pixels[offset + 1] = (char)points[minimum_index].g;
+            pixels[offset + 2] = (char)points[minimum_index].r;
+            pixels[offset + 3] = (char)255;
         }
     }
 }
 
-extern "C" void cuda_voronoi(Point *points, int pointc, int *indices, int w, int h)
+extern "C" void voronoi_cuda(Point *points, char *pixels)
 {
     Point *device_points;
-    int *device_indices;
+    char *device_pixels;
 
-    cudaMalloc((void**)(&device_indices), sizeof(int)*w*h);
+    cudaMalloc((void**)(&device_pixels), sizeof(char)*4*SCREEN_W*SCREEN_H);
 
-    cudaMalloc((void**)(&device_points), sizeof(Point)*pointc);
-    cudaMemcpy(device_points, points, sizeof(Point)*pointc, cudaMemcpyHostToDevice);
+    cudaMalloc((void**)(&device_points), sizeof(Point)*POINT_COUNT);
+    cudaMemcpy(device_points, points, sizeof(Point)*POINT_COUNT, cudaMemcpyHostToDevice);
 
-    cuda_voronoi_kernel<<<1,128>>>(device_points, pointc, device_indices, w, h);
+    int threads_per_block = 256;
+    int block_count = (SCREEN_W + threads_per_block - 1) / threads_per_block;
 
-    cudaMemcpy(indices, device_indices, sizeof(int)*w*h, cudaMemcpyDeviceToHost);
+    voronoi_cuda_kernel<<<block_count, threads_per_block>>>(device_points, device_pixels);
+
+    cudaMemcpy(pixels, device_pixels, sizeof(char)*4*SCREEN_W*SCREEN_H, cudaMemcpyDeviceToHost);
 
     cudaFree(device_points);
-    cudaFree(device_indices);
+    cudaFree(device_pixels);
 }
+

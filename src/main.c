@@ -3,13 +3,11 @@
 #include <time.h>
 #include <math.h>
 #include <stdbool.h>
+#include <float.h>
 #include "SDL.h"
 #include "SDL_ttf.h"
 
 #include "shared_with_cuda.h"
-
-#define SCREEN_W 1200
-#define SCREEN_H 800
 
 /*
  * TODO(bkaylor): Delaunay implementation- euclidean
@@ -58,7 +56,7 @@ typedef struct
     int b;
 } Line;
 
-extern void cuda_voronoi(Point *, int, int *, int, int);
+extern void voronoi_cuda(Point *, char *);
 
 /*
 void render_triangulation(SDL_Renderer *ren, Triangle *triangulation, int triangle_count)
@@ -165,11 +163,6 @@ int are_equivalent_edges(Edge a, Edge b)
 {
     return (are_equivalent_points(a.points[0], b.points[0]) && are_equivalent_points(a.points[1], b.points[1])) ||
            (are_equivalent_points(a.points[1], b.points[0]) && are_equivalent_points(a.points[0], b.points[1]));
-}
-
-int compare_points_along_x(const void *a, const void *b)
-{
-    return ((Point *)a)->x < ((Point *)b)->x;
 }
 
 Circle get_circumcircle_of_triangle(Triangle triangle)
@@ -505,49 +498,21 @@ void fast(SDL_Renderer *ren, int point_count, int window_w, int window_h)
     // free(triangulation);
 }
 
-void voronoi3(SDL_Renderer *renderer, 
-              int point_count, 
-              int window_w, 
-              int window_h)
+void voronoi_naive(Point *points, char *pixels)
 {
-    char *pixels = malloc(4 * window_w * window_h);
-    SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, window_w, window_h);
-
-    // Assign points
-    Point *points = malloc(sizeof(Point) * point_count);
-    for (int i = 0; i < point_count; i += 1)
+    for (int i = 0; i < SCREEN_W; i += 1)
     {
-		points[i].x = rand() % window_w;
-		points[i].y = rand() % window_h;
-		points[i].r = rand() % 255;
-		points[i].g = rand() % 255;
-		points[i].b = rand() % 255;
-    }
-
-    // Now, sort points along X axis 
-    qsort(points, point_count, sizeof(Point), compare_points_along_x);
-
-    for (int i = 0; i < window_w; i += 1)
-    {
-        for (int j = 0; j < window_h; j += 1)
+        for (int j = 0; j < SCREEN_H; j += 1)
         {
-
-            float minimum_distance = 100000.0f;
+            float minimum_distance = FLT_MAX;
             int minimum_index = 0;
 	
-			for (int k = 0; k < point_count; ++k)
+			for (int k = 0; k < POINT_COUNT; k += 1)
 			{
 				// Get distance from each point
-                float distance = 0.0f;
                 float x_distance = (float)(points[k].x - i);
-
-                if (x_distance > minimum_distance)
-                {
-                    break;
-                }
-
                 float y_distance = (float)(points[k].y - j);
-                distance = (x_distance * x_distance) + (y_distance * y_distance); // Skipping the sqrt here.
+                float distance = (x_distance * x_distance) + (y_distance * y_distance);
 
                 if (distance < minimum_distance)
                 {
@@ -557,204 +522,43 @@ void voronoi3(SDL_Renderer *renderer,
 			}
 
 			// Draw pixel
-            int offset = (j*4) * window_w + (i*4);
+            int offset = (j*4) * SCREEN_W + (i*4);
             pixels[offset + 0] = (char)points[minimum_index].b;
             pixels[offset + 1] = (char)points[minimum_index].g;
             pixels[offset + 2] = (char)points[minimum_index].r;
             pixels[offset + 3] = 255;
         }
     }
-
-    SDL_UpdateTexture(texture, NULL, pixels, window_w*4);
-
-    SDL_RenderCopy(renderer, texture, NULL, NULL);
-
-    SDL_DestroyTexture(texture);
-    free(points);
-    free(pixels);
 }
 
-void voronoi2(SDL_Renderer *renderer, 
-              int point_count, 
-              int window_w, 
-              int window_h)
+int compare_points_along_x(const void *a, const void *b)
 {
-    // Create texture
-    char *pixels = malloc(4 * window_w * window_h);
-
-    SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, window_w, window_h);
-
-	// Assign random points
-    Point *points = malloc(sizeof(Point) * point_count);
-
-	for (int i = 0; i < point_count; ++i)
-	{
-		points[i].x = rand() % window_w;
-		points[i].y = rand() % window_h;
-		points[i].r = rand() % 255;
-		points[i].g = rand() % 255;
-		points[i].b = rand() % 255;
-	}
-
-	for (int i = 0; i < window_w; ++i)
-	{
-		for (int j = 0; j < window_h; ++j)
-		{
-            float minimum_distance = 100000.0f;
-            int minimum_index = 0;
-	
-			for (int k = 0; k < point_count; ++k)
-			{
-				// Get distance from each point
-                float distance = 0.0f;
-                float x_distance = (float)(points[k].x - i);
-                float y_distance = (float)(points[k].y - j);
-                distance = (x_distance * x_distance) + (y_distance * y_distance); // Skipping the sqrt here.
-
-                if (distance < minimum_distance)
-                {
-                    minimum_distance = distance;
-                    minimum_index = k;
-                }
-			}
-
-			// Draw pixel
-            int offset = (j*4) * window_w + (i*4);
-            pixels[offset + 0] = (char)points[minimum_index].b;
-            pixels[offset + 1] = (char)points[minimum_index].g;
-            pixels[offset + 2] = (char)points[minimum_index].r;
-            pixels[offset + 3] = 255;
-		}
-	}
-
-    SDL_UpdateTexture(texture, NULL, pixels, window_w*4);
-
-    SDL_RenderCopy(renderer, texture, NULL, NULL);
-
-    SDL_DestroyTexture(texture);
-    free(points);
-    free(pixels);
+    return ((Point *)a)->x < ((Point *)b)->x;
 }
 
-void voronoi(SDL_Renderer *ren, int point_count, enum Distance_Formula dist_type, int window_w, int window_h)
+void voronoi_grid(Point *points, char *pixels)
 {
-    // Create texture
-    char *pixels = malloc(4 * window_w * window_h);
-
-    SDL_Texture *texture = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, window_w, window_h);
-    // SDL_LockTexture(texture, null, &pixels, &pitch);
-
-	// Assign random points
-	Point *points = malloc(sizeof(Point) * point_count);
-
-	for (int i = 0; i < point_count; ++i)
-	{
-        Point *p = &points[i];
-
-		p->x = rand() % window_w;
-		p->y = rand() % window_h;
-
-		p->r = rand() % 255;
-		p->g = rand() % 255;
-		p->b = rand() % 255;
-	}
-
-	for (int i = 0; i < window_w; ++i)
-	{
-		for (int j = 0; j < window_h; ++j)
-		{
-            float minimum_distance = 100000.0f;
-            int minimum_index = 0;
-	
-			for (int k = 0; k < point_count; ++k)
-			{
-                Point *p = &points[k];
-
-				// Get distance from each point
-                float distance = 0.0f;
-				switch(dist_type)
-				{
-					case (MANHATTAN):
-						distance = (float)(abs(p->x - i) + abs(p->y - j));
-						break;
-					case (EUCLIDEAN):
-					default:
-                        float x_distance = (float)(p->x - i);
-                        float y_distance = (float)(p->y - j);
-
-                        if (x_distance > minimum_distance || y_distance > minimum_distance)
-                        {
-                            break;
-                        }
-
-						distance = (x_distance * x_distance) + (y_distance * y_distance); // Skipping the sqrt here.
-						break;
-
-				}
-
-                if (distance < minimum_distance)
-                {
-                    minimum_distance = distance;
-                    minimum_index = k;
-                }
-			}
-
-			// Assign color based on closest
-            Point *closest = &points[minimum_index];
-
-			// Draw pixel
-            int offset = (j*4) * window_w + (i*4);
-            pixels[offset + 0] = (char)closest->b;
-            pixels[offset + 1] = (char)closest->g;
-            pixels[offset + 2] = (char)closest->r;
-            pixels[offset + 3] = 255;
-			// SDL_RenderDrawPoint(ren, i, j);
-		}
-	}
-
-    SDL_UpdateTexture(texture, NULL, pixels, window_w*4);
-
-    SDL_RenderCopy(ren, texture, NULL, NULL);
-
-    free(points);
-    free(pixels);
-}
-
-
-// This isn't really faster than the non-grid version in an unoptimized build.
-void grid_voronoi(SDL_Renderer *ren, int point_count, enum Distance_Formula dist_type, int window_w, int window_h)
-{
-	// Assign random points
-	Point *points = malloc(sizeof(Point) * point_count);
-
     // Define the subdivisions of the grid
     int NUM_COLUMNS = 20;
     int NUM_ROWS    = 20;
 
-    int cell_width  = window_w / NUM_COLUMNS;
-    int cell_height = window_h / NUM_ROWS; 
+    int cell_width  = SCREEN_W / NUM_COLUMNS;
+    int cell_height = SCREEN_H / NUM_ROWS; 
 
-	for (int i = 0; i < point_count; ++i)
+	for (int i = 0; i < POINT_COUNT; ++i)
 	{
         Point *p = &points[i];
-		p->x = rand() % window_w;
-		p->y = rand() % window_h;
-
         p->cell_x = p->x / cell_width;
         p->cell_y = p->y / cell_height;
-
-		p->r = rand() % 255;
-		p->g = rand() % 255;
-		p->b = rand() % 255;
 	}
 
     // Now, sort points along X axis 
-    qsort(points, point_count, sizeof(Point), compare_points_along_x);
+    qsort(points, POINT_COUNT, sizeof(Point), compare_points_along_x);
 
     // Iterate over all the pixels
-	for (int i = 0; i < window_w; ++i)
+	for (int i = 0; i < SCREEN_W; ++i)
 	{
-		for (int j = 0; j < window_h; ++j)
+		for (int j = 0; j < SCREEN_H; ++j)
 		{
             float minimum_distance = 100000.0f;
             int minimum_index = 0;
@@ -762,31 +566,20 @@ void grid_voronoi(SDL_Renderer *ren, int point_count, enum Distance_Formula dist
             int this_cell_x = i / cell_width;
             int this_cell_y = j / cell_height;
 	
-			for (int k = 0; k < point_count; ++k)
+			for (int k = 0; k < POINT_COUNT; ++k)
 			{
                 Point *p = &points[k];
 
                 // Early exit if we're not in an adjacent grid cell
-                if (!(abs(p->cell_x-this_cell_x)<=1 && abs(p->cell_y-this_cell_y<=1)))
+                if (!(abs(p->cell_x-this_cell_x)<=1 && abs(p->cell_y-this_cell_y)<=1))
                 {
                     continue;
                 }
 
 				// Get distance from each point
-                float distance = 0.0f;
-				switch(dist_type)
-				{
-					case (MANHATTAN):
-						distance = (float)(abs(p->x - i) + abs(p->y - j));
-						break;
-					case (EUCLIDEAN):
-					default:
-                        float x_distance = (float)(p->x - i);
-                        float y_distance = (float)(p->y - j);
-						distance = (x_distance * x_distance) + (y_distance * y_distance); // Skipping the sqrt here.
-						break;
-
-				}
+                float x_distance = (float)(p->x - i);
+                float y_distance = (float)(p->y - j);
+                float distance = (x_distance * x_distance) + (y_distance * y_distance); 
 
                 if (distance < minimum_distance)
                 {
@@ -795,20 +588,13 @@ void grid_voronoi(SDL_Renderer *ren, int point_count, enum Distance_Formula dist
                 }
 			}
 
-			// Assign color based on closest
-            // Color the points themselves black
-            if (minimum_distance < 2.0)
-            {
-                SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
-            }
-            else
-            {
-                SDL_SetRenderDrawColor(ren, (Uint8)points[minimum_index].r, (Uint8)points[minimum_index].b, (Uint8)points[minimum_index].g, 255);
-            }
-
 			// Draw pixel
-			SDL_RenderDrawPoint(ren, i, j);
-		}
+            int offset = (j*4) * SCREEN_W + (i*4);
+            pixels[offset + 0] = (char)points[minimum_index].b;
+            pixels[offset + 1] = (char)points[minimum_index].g;
+            pixels[offset + 2] = (char)points[minimum_index].r;
+            pixels[offset + 3] = 255;
+        }
 	}
 }
 
@@ -818,7 +604,7 @@ int main(int argc, char *argv[])
     (void)argv;
 
     // Turn off stdout buffering so printf works.
-    setvbuf (stdout, NULL, _IONBF, 0);
+    setvbuf(stdout, NULL, _IONBF, 0);
 
 	SDL_Init(SDL_INIT_EVERYTHING);
 
@@ -848,219 +634,163 @@ int main(int argc, char *argv[])
 	bool doiter = false;
 	int frame = 0;
 	char frame_s[10];
-	char type_s[10];
-    char fast_s[10];
-	char point_s[10];
+    char mode_s[20];
+	char point_s[30];
     bool show_text = true;
-    bool fast_mode = false;
-    bool grid_mode = false;
-    bool cuda_mode = false;
 
-	enum Distance_Formula dist_type = EUCLIDEAN;
-	int point_count = 20;
+    int mode = 0;
+
+	int point_count = POINT_COUNT;
 
 	// Setup
 	printf("\n");
 	srand((unsigned) time(NULL));
 	unsigned int start_time, end_time, frame_time;
 	frame_time = 0;
-    snprintf(type_s, sizeof(type_s), "Euclidean");
-    snprintf(fast_s, sizeof(fast_s), "Delaunay");
 
 	// Main Loop
-	while (!quit)
-	{
-
- 	while (!doiter && !quit)
-		{
-			// Input
-			while (SDL_PollEvent(&event))
-			{
-				switch (event.type)
-				{
-					case SDL_KEYDOWN:
-						switch (event.key.keysym.sym)
-						{
-							case SDLK_SPACE:
-                                doiter = true;
-								break;
-
-							case SDLK_k:
-								if (dist_type == MANHATTAN)
-								{
-									dist_type = EUCLIDEAN;
-                                    snprintf(type_s, sizeof(type_s), "Euclidean");
-								}
-								else
-								{
-									dist_type = MANHATTAN;
-                                    snprintf(type_s, sizeof(type_s), "Manhattan");
-								}
-								break;
-
-							case SDLK_i:
-								point_count = point_count + 10;
-								break;
-
-							case SDLK_o:
-								if (point_count > 10)
-								{
-									point_count = point_count - 10;
-								}
-								break;
-
-							case SDLK_h:
-                                show_text = !show_text;
-								break;
-
-							case SDLK_g:
-                                grid_mode = !grid_mode;
-								break;
-
-                            case SDLK_f:
-                                fast_mode = !fast_mode;
-                                break;
-
-                            case SDLK_c:
-                                cuda_mode = !cuda_mode;
-                                break;
-
-							case SDLK_ESCAPE:
-                                quit = true;
-								break;
-						}
-						break;
-					case SDL_QUIT:
-						quit = true;
-						break;
-					default:
-						break;
-				}
-			}
-		}
-
-        if (!quit) {
-            doiter = false;
-
-            // Render
-            SDL_RenderClear(ren);
-
-            int window_w, window_h;
-            SDL_GetWindowSize(win, &window_w, &window_h);
-
-            start_time = SDL_GetTicks();
-            if (cuda_mode)
+    while (!quit)
+    {
+        while (!doiter && !quit)
+        {
+            // Input
+            while (SDL_PollEvent(&event))
             {
+                switch (event.type)
+                {
+                    case SDL_KEYDOWN:
+                        switch (event.key.keysym.sym)
+                        {
+                            case SDLK_SPACE:
+                                doiter = true;
+                                break;
+
+                            case SDLK_TAB:
+                                show_text = !show_text;
+                                break;
+
+                            case SDLK_0:
+                                mode = 0;
+                                break;
+
+                            case SDLK_1:
+                                mode = 1;
+                                break;
+
+                            case SDLK_9:
+                                mode = 9;
+                                break;
+
+                            case SDLK_ESCAPE:
+                                quit = true;
+                                break;
+                        }
+                        break;
+                    case SDL_QUIT:
+                        quit = true;
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            if (doiter && !quit) 
+            {
+                doiter = false;
+
+                start_time = SDL_GetTicks();
+
+                // Render
+                SDL_RenderClear(ren);
+
                 // Create texture
-                char *pixels = malloc(4 * window_w * window_h);
-                SDL_Texture *texture = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, window_w, window_h);
+                char *pixels = malloc(4 * SCREEN_W * SCREEN_H);
+                SDL_Texture *texture = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, SCREEN_W, SCREEN_H);
 
                 // Assign points
                 Point *points = malloc(sizeof(Point) * point_count);
                 for (int i = 0; i < point_count; i += 1)
                 {
-                    points[i].x = rand() % window_w;
-                    points[i].y = rand() % window_h;
+                    points[i].x = rand() % SCREEN_W;
+                    points[i].y = rand() % SCREEN_H;
                     points[i].r = rand() % 255;
                     points[i].g = rand() % 255;
                     points[i].b = rand() % 255;
                 }
-
-                // Now, sort points along X axis 
-                qsort(points, point_count, sizeof(Point), compare_points_along_x);
-
-                // CUDA's job is to fill this array
-                int *indices = malloc(sizeof(int) * window_w * window_h);
-                cuda_voronoi(points, point_count, indices, window_w, window_h);
-
-                int pixel_index = 0;
-                for (int i = 0; i < window_w; i += 1)
+                
+                switch (mode)
                 {
-                    for (int j = 0; j < window_h; j += 1)
-                    {
-                        int minimum_index = indices[pixel_index]; 
-                        pixel_index += 1;
-
-                        // Draw pixel
-                        int offset = (j*4) * window_w + (i*4);
-                        pixels[offset + 0] = (Uint8)points[minimum_index].b;
-                        pixels[offset + 1] = (Uint8)points[minimum_index].g;
-                        pixels[offset + 2] = (Uint8)points[minimum_index].r;
-                        pixels[offset + 3] = 255;
-                    }
+                    case 1:
+                        voronoi_grid(points, pixels);
+                        break;
+                    case 9:
+                        voronoi_cuda(points, pixels);
+                    break;
+                    case 0:
+                    default:
+                        voronoi_naive(points, pixels);
+                        break;
                 }
 
-                SDL_UpdateTexture(texture, NULL, pixels, window_w*4);
+                // Render
+                SDL_RenderClear(ren);
+                SDL_UpdateTexture(texture, NULL, pixels, SCREEN_W*4);
 
                 SDL_RenderCopy(ren, texture, NULL, NULL);
 
                 SDL_DestroyTexture(texture);
                 free(points);
                 free(pixels);
-            }
-            else
-            {
-                if (fast_mode) {
-                    fast(ren, point_count, window_w, window_h);
-                } else {
-                    if (grid_mode) {
-                        grid_voronoi(ren, point_count, dist_type, window_w, window_h);
-                    } else {
-                        voronoi3(ren, point_count, window_w, window_h);
-                    }
+                
+                snprintf(frame_s, sizeof(frame_s), "%u ms", frame_time);
+                snprintf(mode_s, sizeof(mode_s), "%u mode", mode);
+                snprintf(point_s, sizeof(point_s), "%d points", point_count);
+
+                SDL_Surface *frame_surface = TTF_RenderText_Solid(font, frame_s, font_color);
+                SDL_Texture *frame_texture = SDL_CreateTextureFromSurface(ren, frame_surface);
+                int frame_x, frame_y;
+                SDL_QueryTexture(frame_texture, NULL, NULL, &frame_x, &frame_y);
+                SDL_Rect frame_rect = {5 , 5, frame_x, frame_y};
+
+                if (show_text) {
+                    SDL_RenderCopy(ren, frame_texture, NULL, &frame_rect);
                 }
+
+                SDL_Surface *mode_surface = TTF_RenderText_Solid(font, mode_s, font_color);
+                SDL_Texture *mode_texture = SDL_CreateTextureFromSurface(ren, mode_surface);
+                int mode_x, mode_y;
+                SDL_QueryTexture(mode_texture, NULL, NULL, &mode_x, &mode_y);
+                SDL_Rect mode_rect = {5 , 5 + 10, mode_x, mode_y};
+
+                if (show_text) {
+                    SDL_RenderCopy(ren, mode_texture, NULL, &mode_rect);
+                }
+
+                SDL_Surface *point_surface = TTF_RenderText_Solid(font, point_s, font_color);
+                SDL_Texture *point_texture = SDL_CreateTextureFromSurface(ren, point_surface);
+                int point_x, point_y;
+                SDL_QueryTexture(point_texture, NULL, NULL, &point_x, &point_y);
+                SDL_Rect point_rect = {5 , 5 + 20, point_x, point_y};
+
+                if (show_text) {
+                    SDL_RenderCopy(ren, point_texture, NULL, &point_rect);
+                }
+
+                SDL_RenderPresent(ren);
+                ++frame;
+
+                // Cleanup
+                SDL_FreeSurface(frame_surface);
+                SDL_DestroyTexture(frame_texture);
+
+                SDL_FreeSurface(point_surface);
+                SDL_DestroyTexture(point_texture);
+
+                end_time = SDL_GetTicks();
+                frame_time = end_time - start_time;
             }
-            end_time = SDL_GetTicks();
-
-            frame_time = end_time - start_time;
-            snprintf(frame_s, sizeof(frame_s), "%u ms", frame_time);
-
-            snprintf(point_s, sizeof(point_s), "%d points", point_count);
-
-            SDL_Surface *frame_surface = TTF_RenderText_Solid(font, frame_s, font_color);
-            SDL_Texture *frame_texture = SDL_CreateTextureFromSurface(ren, frame_surface);
-            int frame_x, frame_y;
-            SDL_QueryTexture(frame_texture, NULL, NULL, &frame_x, &frame_y);
-            SDL_Rect frame_rect = {5 , 5, frame_x, frame_y};
-
-            if (show_text) {
-                SDL_RenderCopy(ren, frame_texture, NULL, &frame_rect);
-            }
-
-            SDL_Surface *type_surface = TTF_RenderText_Solid(font, fast_mode ? fast_s : type_s, font_color);
-            SDL_Texture *type_texture = SDL_CreateTextureFromSurface(ren, type_surface);
-            int type_x, type_y;
-            SDL_QueryTexture(type_texture, NULL, NULL, &type_x, &type_y);
-            SDL_Rect type_rect = {5 , 5 + 10, type_x, type_y};
-
-            if (show_text) {
-                SDL_RenderCopy(ren, type_texture, NULL, &type_rect);
-            }
-
-            SDL_Surface *point_surface = TTF_RenderText_Solid(font, point_s, font_color);
-            SDL_Texture *point_texture = SDL_CreateTextureFromSurface(ren, point_surface);
-            int point_x, point_y;
-            SDL_QueryTexture(point_texture, NULL, NULL, &point_x, &point_y);
-            SDL_Rect point_rect = {5 , 5 + 20, point_x, point_y};
-
-            if (show_text) {
-                SDL_RenderCopy(ren, point_texture, NULL, &point_rect);
-            }
-
-            SDL_RenderPresent(ren);
-            ++frame;
-
-            // Cleanup
-            SDL_FreeSurface(frame_surface);
-            SDL_DestroyTexture(frame_texture);
-
-            SDL_FreeSurface(type_surface);
-            SDL_DestroyTexture(type_texture);
-
-            SDL_FreeSurface(point_surface);
-            SDL_DestroyTexture(point_texture);
         }
-	}
+    }
 
 	SDL_DestroyRenderer(ren);
 	SDL_DestroyWindow(win);
